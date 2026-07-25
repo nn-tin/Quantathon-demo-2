@@ -19,7 +19,9 @@ MAPPING_CSV = ROOT / "evaluate" / "test-gpu" / "generator-qubit-candidate-mappin
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from app.datasets.default_dataset import load_default_dataset
 from app.models.schemas import ClassicalConfig, HybridConfig, RunConfig, ScenarioInput, ScenarioProfilesInput
+from app.models.schemas import DatasetModel, GeneratorSpec
 from app.services.pipeline import PipelineService
 
 
@@ -54,6 +56,24 @@ class MappingRow:
     candidate_hours: int
     qubits_used: int
     top_k: int
+
+
+@dataclass
+class GeneratorScalingResult:
+    generator_count: int
+    instance: int
+    supported_by_pipeline: bool
+    active_qubits: int | None
+    candidate_generators: int | None
+    candidate_hours: int | None
+    milp_runtime_ms: float
+    hybrid_runtime_ms: float
+    runtime_ratio_hybrid_over_milp: float | None
+    hybrid_source: str | None
+    execution_device: str | None
+    execution_backend: str | None
+    fallback_reason: str | None
+    error: str | None = None
 
 
 def load_env_value(env_path: Path, key: str) -> str | None:
@@ -119,6 +139,70 @@ def select_mapping_row(total_generators: int, requested_qubits: int, rows: list[
     if exact:
         return exact[0]
     return None
+
+
+def build_scaled_dataset(total_generators: int) -> DatasetModel:
+    if total_generators < 1:
+        raise ValueError("total_generators must be positive.")
+
+    base = load_default_dataset()
+    base_generators = list(base.generators)
+    cycles = math.ceil(total_generators / len(base_generators))
+    generators: list[GeneratorSpec] = []
+
+    for cycle in range(cycles):
+        fleet_scale = 1.0 + 0.06 * cycle
+        cost_scale = 1.0 + 0.015 * cycle
+        for source in base_generators:
+            if len(generators) >= total_generators:
+                break
+            index = len(generators) + 1
+            generators.append(
+                source.model_copy(
+                    update={
+                        "id": f"G{index}",
+                        "name": f"{source.name}-B{cycle + 1}",
+                        "p_min": round(float(source.p_min) * fleet_scale, 3),
+                        "p_max": round(float(source.p_max) * fleet_scale, 3),
+                        "variable_cost": round(float(source.variable_cost) * cost_scale, 3),
+                        "no_load_cost": round(float(source.no_load_cost) * cost_scale, 3),
+                        "startup_cost": round(float(source.startup_cost) * cost_scale, 3),
+                        "shutdown_cost": round(float(source.shutdown_cost) * cost_scale, 3),
+                        "ramp_up": round(float(source.ramp_up) * fleet_scale, 3),
+                        "ramp_down": round(float(source.ramp_down) * fleet_scale, 3),
+                        "initial_output": round(
+                            min(float(source.initial_output) * fleet_scale, float(source.p_max) * fleet_scale),
+                            3,
+                        ),
+                    }
+                )
+            )
+
+    demand_scale = 1.0 + 0.82 * max(0, total_generators - len(base_generators)) / len(base_generators)
+    renewable_scale = 1.0 + 0.35 * max(0, total_generators - len(base_generators)) / len(base_generators)
+    reserve_scale = 1.0 + 0.55 * max(0, total_generators - len(base_generators)) / len(base_generators)
+    return base.model_copy(
+        update={
+            "id": f"default_{total_generators}x24_runtime",
+            "name": f"Scaled {total_generators}-Generator 24-Hour System",
+            "description": f"Synthetic runtime-scaling dataset with {total_generators} generators for compare_hybrid_milp.",
+            "demand": [round(float(value) * demand_scale, 3) for value in base.demand],
+            "renewable": [round(float(value) * renewable_scale, 3) for value in base.renewable],
+            "reserve": [round(float(value) * reserve_scale, 3) for value in base.reserve],
+            "solar_available": [round(float(value) * renewable_scale * 0.55, 3) for value in base.renewable],
+            "wind_available": [round(float(value) * renewable_scale * 0.45, 3) for value in base.renewable],
+            "grid_import_limit_mw": round((52.0 + 0.9 * 24) * demand_scale, 3),
+            "battery_capacity_mwh": round((72.0 + 1.4 * 24) * demand_scale, 3),
+            "battery_charge_limit_mw": round((16.0 + 0.35 * 24) * demand_scale, 3),
+            "battery_discharge_limit_mw": round((18.0 + 0.35 * 24) * demand_scale, 3),
+            "initial_battery_soc_mwh": round((72.0 + 1.4 * 24) * demand_scale * 0.52, 3),
+            "generators": generators,
+        }
+    )
+
+
+def install_runtime_dataset(service: PipelineService, dataset: DatasetModel) -> None:
+    service.datasets._datasets[dataset.id] = dataset
 
 
 def build_mock_profiles(qubits: int, instance: int) -> ScenarioProfilesInput:
@@ -269,6 +353,95 @@ def execute_pipeline_case(
         active_qubits=int(hybrid.get("active_qubits", mapping.qubits_used)),
         hybrid_source=str(hybrid.get("backend_source") or selected.get("source") or ""),
         hybrid_target=str(final_backend.get("raw_payload", {}).get("target", target)),
+        execution_device=str(execution_device) if execution_device else None,
+        execution_backend=str(execution_backend) if execution_backend else None,
+        fallback_reason=str(fallback_reason) if fallback_reason else None,
+    )
+
+
+def execute_generator_scaling_case(
+    service: PipelineService,
+    generator_count: int,
+    instance: int,
+    mapping_rows: list[MappingRow],
+    target: str,
+    depth: int,
+    shots: int,
+    optimizer_shots: int,
+    optimizer_evals: int,
+    require_cudaq: bool,
+    seed: int,
+    mip_gap: float,
+    time_limit: float,
+) -> GeneratorScalingResult:
+    qubits = 24
+    mapping = select_mapping_row(generator_count, qubits, mapping_rows)
+    if mapping is None:
+        return GeneratorScalingResult(
+            generator_count=generator_count,
+            instance=instance,
+            supported_by_pipeline=False,
+            active_qubits=None,
+            candidate_generators=None,
+            candidate_hours=None,
+            milp_runtime_ms=math.nan,
+            hybrid_runtime_ms=math.nan,
+            runtime_ratio_hybrid_over_milp=None,
+            hybrid_source=None,
+            execution_device=None,
+            execution_backend=None,
+            fallback_reason=None,
+            error=f"No mapping row for total_generators={generator_count} and qubit_budget={qubits}.",
+        )
+
+    dataset = build_scaled_dataset(generator_count)
+    install_runtime_dataset(service, dataset)
+    config = RunConfig(
+        dataset_id=dataset.id,
+        classical_config=ClassicalConfig(
+            mip_gap=mip_gap,
+            time_limit_seconds=time_limit,
+        ),
+        hybrid_config=HybridConfig(
+            qubit_budget=qubits,
+            candidate_generators=mapping.candidate_generators,
+            candidate_hours=mapping.candidate_hours,
+            qaoa_depth=depth,
+            shots=shots,
+            optimizer_shots=optimizer_shots,
+            optimizer_evaluations=optimizer_evals,
+            top_k=mapping.top_k,
+            max_quantum_rounds=3,
+            random_seed=seed,
+            quantum_target=target,
+            allow_numpy_fallback=not require_cudaq,
+        ),
+        scenario_input=build_mock_scenario_input(qubits, instance),
+        presentation_mode=False,
+        presentation_delay_ms=0,
+    )
+
+    summary = service.execute_run(config)
+    classical = summary.result["classical"]
+    hybrid = summary.result["hybrid"]
+    rounds = hybrid.get("quantum_rounds", [])
+    final_backend = rounds[-1]["backend"] if rounds else {}
+    fallback_reason = final_backend.get("raw_payload", {}).get("fallback_reason")
+    execution_device = final_backend.get("raw_payload", {}).get("execution_device")
+    execution_backend = final_backend.get("raw_payload", {}).get("execution_backend")
+    milp_runtime = float(classical["runtime_ms"])
+    hybrid_runtime = float(hybrid["runtime_ms"])
+    return GeneratorScalingResult(
+        generator_count=generator_count,
+        instance=instance,
+        supported_by_pipeline=True,
+        active_qubits=int(hybrid.get("active_qubits", mapping.qubits_used)),
+        candidate_generators=mapping.candidate_generators,
+        candidate_hours=mapping.candidate_hours,
+        milp_runtime_ms=milp_runtime,
+        hybrid_runtime_ms=hybrid_runtime,
+        runtime_ratio_hybrid_over_milp=round(hybrid_runtime / max(milp_runtime, 1e-9), 6),
+        hybrid_source=str(hybrid.get("backend_source") or ""),
         execution_device=str(execution_device) if execution_device else None,
         execution_backend=str(execution_backend) if execution_backend else None,
         fallback_reason=str(fallback_reason) if fallback_reason else None,
@@ -426,6 +599,113 @@ def write_outputs(output_dir: Path, cases: list[CaseResult], summary_rows: list[
     summary_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def summarize_generator_scaling(results: list[GeneratorScalingResult]) -> list[dict[str, object]]:
+    grouped: dict[int, list[GeneratorScalingResult]] = {}
+    for row in results:
+        grouped.setdefault(row.generator_count, []).append(row)
+
+    summary_rows: list[dict[str, object]] = []
+    for generator_count in sorted(grouped):
+        rows = grouped[generator_count]
+        valid = [row for row in rows if row.error is None]
+        if not valid:
+            summary_rows.append(
+                {
+                    "generator_count": generator_count,
+                    "status": "all_failed",
+                    "supported_by_pipeline": any(row.supported_by_pipeline for row in rows),
+                }
+            )
+            continue
+        summary_rows.append(
+            {
+                "generator_count": generator_count,
+                "instances": len(valid),
+                "supported_by_pipeline": True,
+                "active_qubits": sorted({row.active_qubits for row in valid if row.active_qubits is not None}),
+                "candidate_generators": sorted({row.candidate_generators for row in valid if row.candidate_generators is not None}),
+                "candidate_hours": sorted({row.candidate_hours for row in valid if row.candidate_hours is not None}),
+                "milp_runtime_avg_ms": round(statistics.mean(row.milp_runtime_ms for row in valid), 6),
+                "hybrid_runtime_avg_ms": round(statistics.mean(row.hybrid_runtime_ms for row in valid), 6),
+                "runtime_ratio_hybrid_over_milp": round(
+                    statistics.mean(row.hybrid_runtime_ms for row in valid)
+                    / max(statistics.mean(row.milp_runtime_ms for row in valid), 1e-9),
+                    6,
+                ),
+                "execution_devices": sorted({row.execution_device for row in valid if row.execution_device}),
+                "execution_backends": sorted({row.execution_backend for row in valid if row.execution_backend}),
+                "hybrid_sources": sorted({row.hybrid_source for row in valid if row.hybrid_source}),
+                "fallbacks": sum(1 for row in valid if row.fallback_reason),
+            }
+        )
+    return summary_rows
+
+
+def write_generator_scaling_outputs(
+    output_dir: Path,
+    cases: list[GeneratorScalingResult],
+    summary_rows: list[dict[str, object]],
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cases_json = output_dir / "generator_scaling_24q_cases.json"
+    summary_json = output_dir / "generator_scaling_24q_summary.json"
+    summary_csv = output_dir / "generator_scaling_24q_summary.csv"
+    summary_md = output_dir / "generator_scaling_24q_summary.md"
+
+    cases_json.write_text(json.dumps([asdict(row) for row in cases], indent=2), encoding="utf-8")
+    summary_json.write_text(json.dumps(summary_rows, indent=2), encoding="utf-8")
+
+    with summary_csv.open("w", newline="", encoding="utf-8") as handle:
+        fieldnames = [
+            "generator_count",
+            "instances",
+            "supported_by_pipeline",
+            "active_qubits",
+            "candidate_generators",
+            "candidate_hours",
+            "milp_runtime_avg_ms",
+            "hybrid_runtime_avg_ms",
+            "runtime_ratio_hybrid_over_milp",
+            "execution_devices",
+            "execution_backends",
+            "hybrid_sources",
+            "fallbacks",
+            "status",
+        ]
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in summary_rows:
+            writer.writerow(row)
+
+    lines = [
+        "# 24-Qubit Generator Scaling Runtime Comparison",
+        "",
+        "| Generators | Supported | Active Qubits | Active Generators | Active Hours | Instances | MILP Runtime ms | Hybrid Runtime ms | Runtime Ratio | Device | Backend | Source |",
+        "| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
+    ]
+    for row in summary_rows:
+        if row.get("status") == "all_failed":
+            supported = "yes" if row.get("supported_by_pipeline") else "no"
+            lines.append(f"| {row['generator_count']} | {supported} | - | - | - | 0 | - | - | - | - | - | failed |")
+            continue
+        lines.append(
+            "| {generator_count} | yes | {active_qubits} | {candidate_generators} | {candidate_hours} | {instances} | {milp_runtime_avg_ms} | {hybrid_runtime_avg_ms} | {runtime_ratio_hybrid_over_milp} | {devices} | {backends} | {sources} |".format(
+                generator_count=row["generator_count"],
+                active_qubits=",".join(str(value) for value in row["active_qubits"]),
+                candidate_generators=",".join(str(value) for value in row["candidate_generators"]),
+                candidate_hours=",".join(str(value) for value in row["candidate_hours"]),
+                instances=row["instances"],
+                milp_runtime_avg_ms=row["milp_runtime_avg_ms"],
+                hybrid_runtime_avg_ms=row["hybrid_runtime_avg_ms"],
+                runtime_ratio_hybrid_over_milp=row["runtime_ratio_hybrid_over_milp"],
+                devices=",".join(row["execution_devices"]),
+                backends=",".join(row["execution_backends"]),
+                sources=",".join(row["hybrid_sources"]),
+            )
+        )
+    summary_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compare hybrid and MILP using the real backend pipeline.")
     parser.add_argument("--qubits", nargs="*", type=int, default=[12, 16, 20, 24, 28])
@@ -439,6 +719,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mip-gap", type=float, default=0.001)
     parser.add_argument("--time-limit", type=float, default=60.0)
     parser.add_argument("--output-dir", default=str(ROOT / "evaluate" / "test-gpu" / "results"))
+    parser.add_argument("--scaling-generators", nargs="*", type=int, default=[10, 20, 30, 40, 50])
     parser.add_argument("--require-cudaq", action="store_true")
     parser.add_argument(
         "--execution-mode",
@@ -542,6 +823,56 @@ def main() -> int:
     summary_rows = summarize(cases)
     write_outputs(Path(args.output_dir), cases, summary_rows)
 
+    scaling_cases: list[GeneratorScalingResult] = []
+    for generator_count in args.scaling_generators:
+        for instance in range(1, args.instances + 1):
+            try:
+                row = execute_generator_scaling_case(
+                    service=service,
+                    generator_count=generator_count,
+                    instance=instance,
+                    mapping_rows=mapping_rows,
+                    target=args.target,
+                    depth=args.depth,
+                    shots=args.shots,
+                    optimizer_shots=args.optimizer_shots,
+                    optimizer_evals=args.optimizer_evals,
+                    require_cudaq=args.require_cudaq,
+                    seed=args.seed + 211 * instance + generator_count,
+                    mip_gap=args.mip_gap,
+                    time_limit=args.time_limit,
+                )
+            except Exception as exc:
+                row = GeneratorScalingResult(
+                    generator_count=generator_count,
+                    instance=instance,
+                    supported_by_pipeline=select_mapping_row(generator_count, 24, mapping_rows) is not None,
+                    active_qubits=None,
+                    candidate_generators=None,
+                    candidate_hours=None,
+                    milp_runtime_ms=math.nan,
+                    hybrid_runtime_ms=math.nan,
+                    runtime_ratio_hybrid_over_milp=None,
+                    hybrid_source=None,
+                    execution_device=None,
+                    execution_backend=None,
+                    fallback_reason=None,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            scaling_cases.append(row)
+            if row.error is None:
+                print(
+                    f"24 qubits | generators={generator_count} | instance={instance} | "
+                    f"active_qubits={row.active_qubits} | active_block={row.candidate_generators}x{row.candidate_hours} | "
+                    f"MILP runtime ms={row.milp_runtime_ms:.3f} | Hybrid runtime ms={row.hybrid_runtime_ms:.3f} | "
+                    f"runtime_ratio={row.runtime_ratio_hybrid_over_milp} | device={row.execution_device} | backend={row.execution_backend}"
+                )
+            else:
+                print(f"24 qubits | generators={generator_count} | instance={instance} | ERROR | {row.error}")
+
+    scaling_summary_rows = summarize_generator_scaling(scaling_cases)
+    write_generator_scaling_outputs(Path(args.output_dir), scaling_cases, scaling_summary_rows)
+
     print("")
     print("Summary")
     for row in summary_rows:
@@ -556,6 +887,19 @@ def main() -> int:
             f"hybrid_runtime_ms={row['hybrid_runtime_avg_ms']} | "
             f"runtime_ratio={row['runtime_ratio_hybrid_over_milp']} | "
             f"device={row['execution_devices']} | "
+            f"backend={row['execution_backends']}"
+        )
+    print("")
+    print("24-qubit generator scaling")
+    for row in scaling_summary_rows:
+        if row.get("status") == "all_failed":
+            print(f"{row['generator_count']:>2} generators | all_failed | supported={row.get('supported_by_pipeline')}")
+            continue
+        print(
+            f"{row['generator_count']:>2} generators | active_qubits={row['active_qubits']} | "
+            f"active_block={row['candidate_generators']}x{row['candidate_hours']} | instances={row['instances']} | "
+            f"milp_runtime_ms={row['milp_runtime_avg_ms']} | hybrid_runtime_ms={row['hybrid_runtime_avg_ms']} | "
+            f"runtime_ratio={row['runtime_ratio_hybrid_over_milp']} | device={row['execution_devices']} | "
             f"backend={row['execution_backends']}"
         )
     print("")
