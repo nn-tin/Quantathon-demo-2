@@ -1,0 +1,6 @@
+qubits,instances,supported_by_pipeline,active_qubits,milp_total_operating_cost_avg,hybrid_total_operating_cost_avg,optimality_gap_percent_avg,milp_feasibility_rate,hybrid_feasibility_rate,milp_renewable_curtailment_avg_mwh,hybrid_renewable_curtailment_avg_mwh,milp_runtime_avg_ms,hybrid_runtime_avg_ms,hybrid_sources,fallbacks,status
+8,3,True,[8],78993.881667,79642.527667,0.821448,1.0,1.0,0.0,0.0,1854.122333,1831.011,['numpy_statevector_qaoa_fallback'],3,
+12,,True,,,,,,,,,,,,,all_failed
+16,,True,,,,,,,,,,,,,all_failed
+20,,True,,,,,,,,,,,,,all_failed
+24,,True,,,,,,,,,,,,,all_failed

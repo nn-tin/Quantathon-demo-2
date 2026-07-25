@@ -1,0 +1,43 @@
+[
+  {
+    "qubits": 8,
+    "instances": 3,
+    "supported_by_pipeline": true,
+    "active_qubits": [
+      8
+    ],
+    "milp_total_operating_cost_avg": 78993.881667,
+    "hybrid_total_operating_cost_avg": 79642.527667,
+    "optimality_gap_percent_avg": 0.821448,
+    "milp_feasibility_rate": 1.0,
+    "hybrid_feasibility_rate": 1.0,
+    "milp_renewable_curtailment_avg_mwh": 0.0,
+    "hybrid_renewable_curtailment_avg_mwh": 0.0,
+    "milp_runtime_avg_ms": 1854.122333,
+    "hybrid_runtime_avg_ms": 1831.011,
+    "hybrid_sources": [
+      "numpy_statevector_qaoa_fallback"
+    ],
+    "fallbacks": 3
+  },
+  {
+    "qubits": 12,
+    "status": "all_failed",
+    "supported_by_pipeline": true
+  },
+  {
+    "qubits": 16,
+    "status": "all_failed",
+    "supported_by_pipeline": true
+  },
+  {
+    "qubits": 20,
+    "status": "all_failed",
+    "supported_by_pipeline": true
+  },
+  {
+    "qubits": 24,
+    "status": "all_failed",
+    "supported_by_pipeline": true
+  }
+]
