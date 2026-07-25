@@ -428,7 +428,7 @@ def write_outputs(output_dir: Path, cases: list[CaseResult], summary_rows: list[
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compare hybrid and MILP using the real backend pipeline.")
-    parser.add_argument("--qubits", nargs="*", type=int, default=[28, 32, 36])
+    parser.add_argument("--qubits", nargs="*", type=int, default=[12, 18, 20, 24, 28])
     parser.add_argument("--instances", type=int, default=3, help="Number of mock 24h scenarios per requested qubit size.")
     parser.add_argument("--target", default=os.getenv("CUDAQ_TARGET", "qpp-cpu"))
     parser.add_argument("--depth", type=int, default=1)
