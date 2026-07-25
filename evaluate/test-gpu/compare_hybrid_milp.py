@@ -40,6 +40,8 @@ class CaseResult:
     active_qubits: int | None
     hybrid_source: str | None
     hybrid_target: str | None
+    execution_device: str | None
+    execution_backend: str | None
     fallback_reason: str | None
     error: str | None = None
 
@@ -210,6 +212,8 @@ def execute_pipeline_case(
             active_qubits=None,
             hybrid_source=None,
             hybrid_target=None,
+            execution_device=None,
+            execution_backend=None,
             fallback_reason=None,
             error="No matching row in generator-qubit-candidate-mapping.csv for total_generators=10 and requested qubits.",
         )
@@ -247,6 +251,8 @@ def execute_pipeline_case(
     rounds = hybrid.get("quantum_rounds", [])
     final_backend = rounds[-1]["backend"] if rounds else {}
     fallback_reason = final_backend.get("raw_payload", {}).get("fallback_reason")
+    execution_device = final_backend.get("raw_payload", {}).get("execution_device")
+    execution_backend = final_backend.get("raw_payload", {}).get("execution_backend")
     return CaseResult(
         qubits=qubits,
         instance=instance,
@@ -263,6 +269,8 @@ def execute_pipeline_case(
         active_qubits=int(hybrid.get("active_qubits", mapping.qubits_used)),
         hybrid_source=str(hybrid.get("backend_source") or selected.get("source") or ""),
         hybrid_target=str(final_backend.get("raw_payload", {}).get("target", target)),
+        execution_device=str(execution_device) if execution_device else None,
+        execution_backend=str(execution_backend) if execution_backend else None,
         fallback_reason=str(fallback_reason) if fallback_reason else None,
     )
 
@@ -310,6 +318,8 @@ def summarize(results: list[CaseResult]) -> list[dict[str, object]]:
                     / max(statistics.mean(row.milp_runtime_ms for row in valid), 1e-9),
                     6,
                 ),
+                "execution_devices": sorted({row.execution_device for row in valid if row.execution_device}),
+                "execution_backends": sorted({row.execution_backend for row in valid if row.execution_backend}),
                 "hybrid_sources": sorted({row.hybrid_source for row in valid if row.hybrid_source}),
                 "fallbacks": sum(1 for row in valid if row.fallback_reason),
             }
@@ -367,6 +377,8 @@ def write_outputs(output_dir: Path, cases: list[CaseResult], summary_rows: list[
             "milp_runtime_avg_ms",
             "hybrid_runtime_avg_ms",
             "runtime_ratio_hybrid_over_milp",
+            "execution_devices",
+            "execution_backends",
             "hybrid_sources",
             "fallbacks",
             "status",
@@ -379,20 +391,20 @@ def write_outputs(output_dir: Path, cases: list[CaseResult], summary_rows: list[
     lines = [
         "# Mock Hybrid vs MILP Comparison",
         "",
-        "| Requested Qubits | Supported | Active Qubits | Instances | MILP Cost | Hybrid Cost | Gap % | MILP Feas. | Hybrid Feas. | MILP Curtail | Hybrid Curtail | MILP Runtime ms | Hybrid Runtime ms | Runtime Ratio | Source |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Requested Qubits | Supported | Active Qubits | Instances | MILP Cost | Hybrid Cost | Gap % | MILP Feas. | Hybrid Feas. | MILP Curtail | Hybrid Curtail | MILP Runtime ms | Hybrid Runtime ms | Runtime Ratio | Device | Backend | Source |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
     ]
     for row in summary_rows:
         if row.get("status") == "all_failed":
             supported = "yes" if row.get("supported_by_pipeline") else "no"
-            lines.append(f"| {row['qubits']} | {supported} | - | 0 | - | - | - | - | - | - | - | - | - | - | failed |")
+            lines.append(f"| {row['qubits']} | {supported} | - | 0 | - | - | - | - | - | - | - | - | - | - | - | - | failed |")
             continue
         lines.append(
             "| {qubits} | yes | {active_qubits} | {instances} | {milp_total_operating_cost_avg} | "
             "{hybrid_total_operating_cost_avg} | {optimality_gap_percent_avg} | "
             "{milp_feasibility_rate} | {hybrid_feasibility_rate} | "
             "{milp_renewable_curtailment_avg_mwh} | {hybrid_renewable_curtailment_avg_mwh} | "
-            "{milp_runtime_avg_ms} | {hybrid_runtime_avg_ms} | {runtime_ratio_hybrid_over_milp} | {sources} |".format(
+            "{milp_runtime_avg_ms} | {hybrid_runtime_avg_ms} | {runtime_ratio_hybrid_over_milp} | {devices} | {backends} | {sources} |".format(
                 qubits=row["qubits"],
                 active_qubits=",".join(str(value) for value in row["active_qubits"]),
                 instances=row["instances"],
@@ -406,6 +418,8 @@ def write_outputs(output_dir: Path, cases: list[CaseResult], summary_rows: list[
                 milp_runtime_avg_ms=row["milp_runtime_avg_ms"],
                 hybrid_runtime_avg_ms=row["hybrid_runtime_avg_ms"],
                 runtime_ratio_hybrid_over_milp=row["runtime_ratio_hybrid_over_milp"],
+                devices=",".join(row["execution_devices"]),
+                backends=",".join(row["execution_backends"]),
                 sources=",".join(row["hybrid_sources"]),
             )
         )
@@ -504,6 +518,8 @@ def main() -> int:
                     active_qubits=None,
                     hybrid_source=None,
                     hybrid_target=args.target,
+                    execution_device=None,
+                    execution_backend=None,
                     fallback_reason=None,
                     error=f"{type(exc).__name__}: {exc}",
                 )
@@ -516,6 +532,8 @@ def main() -> int:
                     f"Hybrid cost={row.hybrid_total_operating_cost:.3f} | "
                     f"gap={row.optimality_gap_percent} | "
                     f"hybrid_feasible={row.hybrid_feasible} | "
+                    f"device={row.execution_device} | "
+                    f"backend={row.execution_backend} | "
                     f"source={row.hybrid_source}"
                 )
             else:
@@ -536,7 +554,9 @@ def main() -> int:
             f"gap={row['optimality_gap_percent_avg']} | hybrid_feas={row['hybrid_feasibility_rate']} | "
             f"milp_runtime_ms={row['milp_runtime_avg_ms']} | "
             f"hybrid_runtime_ms={row['hybrid_runtime_avg_ms']} | "
-            f"runtime_ratio={row['runtime_ratio_hybrid_over_milp']}"
+            f"runtime_ratio={row['runtime_ratio_hybrid_over_milp']} | "
+            f"device={row['execution_devices']} | "
+            f"backend={row['execution_backends']}"
         )
     print("")
     print(f"results_dir={args.output_dir}")

@@ -295,12 +295,12 @@ class HybridQAOABackend(OptimizationBackend):
         target = hybrid.quantum_target or os.getenv("CUDAQ_TARGET", "qpp-cpu")
         notes: list[str] = []
         source = f"qamomile_cudaq_{target}"
-        LOGGER.info(
-            "HybridQAOA solve start requested_target=%s qubits=%s top_k=%s allow_numpy_fallback=%s",
-            target,
-            problem.dimension,
-            hybrid.top_k,
-            hybrid.allow_numpy_fallback,
+        print(
+            "HybridQAOA solve start "
+            f"requested_target={target} "
+            f"qubits={problem.dimension} "
+            f"top_k={hybrid.top_k} "
+            f"allow_numpy_fallback={hybrid.allow_numpy_fallback}"
         )
         try:
             counts, raw = _qamomile_cudaq(problem, config, target)
