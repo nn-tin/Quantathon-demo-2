@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import logging
 import math
 import os
 import time
+import traceback
 from collections import Counter
 from typing import Any
 
@@ -19,9 +19,6 @@ from app.models.schemas import (
     RunConfig,
 )
 from app.qubo.builder import evaluate_qubo_energy
-
-
-LOGGER = logging.getLogger(__name__)
 
 
 def _hamming(a: str, b: str) -> int:
@@ -82,12 +79,14 @@ def _numpy_qaoa(
 ) -> tuple[dict[str, int], dict[str, Any]]:
     hybrid = config.hybrid_config
     n, p = problem.dimension, hybrid.qaoa_depth
-    LOGGER.warning(
-        "QAOA runtime mode=numpy_fallback target=cpu-simulator qubits=%s depth=%s shots=%s optimizer_evals=%s",
-        n,
-        p,
-        hybrid.shots,
-        hybrid.optimizer_evaluations,
+    print(
+        "QAOA runtime "
+        "mode=numpy_fallback "
+        "target=cpu-simulator "
+        f"qubits={n} "
+        f"depth={p} "
+        f"shots={hybrid.shots} "
+        f"optimizer_evals={hybrid.optimizer_evaluations}"
     )
     states = [format(index, f"0{n}b") for index in range(2**n)]
     energies = np.asarray([evaluate_qubo_energy(problem, bits) for bits in states], dtype=float)
@@ -167,13 +166,14 @@ def _qamomile_cudaq(
     from qamomile.cudaq import CudaqTranspiler
 
     hybrid = config.hybrid_config
-    LOGGER.info(
-        "QAOA runtime mode=cudaq requested_target=%s qubits=%s depth=%s shots=%s optimizer_evals=%s",
-        target,
-        problem.dimension,
-        hybrid.qaoa_depth,
-        hybrid.shots,
-        hybrid.optimizer_evaluations,
+    print(
+        "QAOA runtime "
+        "mode=cudaq "
+        f"requested_target={target} "
+        f"qubits={problem.dimension} "
+        f"depth={hybrid.qaoa_depth} "
+        f"shots={hybrid.shots} "
+        f"optimizer_evals={hybrid.optimizer_evaluations}"
     )
     qubo: dict[tuple[int, int], float] = {}
     for key, value in problem.linear.items():
@@ -194,10 +194,11 @@ def _qamomile_cudaq(
     transpiler = CudaqTranspiler()
     executable = converter.transpile(transpiler, p=hybrid.qaoa_depth)
     executor = transpiler.executor(target=target)
-    LOGGER.info(
-        "QAOA executor initialized backend=cudaq target=%s parameter_count=%s",
-        target,
-        len(executable.parameter_names),
+    print(
+        "QAOA executor initialized "
+        "backend=cudaq "
+        f"target={target} "
+        f"parameter_count={len(executable.parameter_names)}"
     )
     trace: list[dict[str, Any]] = []
     p = hybrid.qaoa_depth
@@ -269,12 +270,13 @@ def _qamomile_cudaq(
         counts = _extract_qamomile_counts(raw, problem.dimension)
     if not counts:
         raise RuntimeError("Qamomile/CUDA-Q returned no decodable bitstrings.")
-    LOGGER.info(
-        "QAOA finished backend=cudaq target=%s objective_mode=%s unique_bitstrings=%s success=%s",
-        target,
-        objective_mode,
-        len(counts),
-        bool(optimized.success),
+    print(
+        "QAOA finished "
+        "backend=cudaq "
+        f"target={target} "
+        f"objective_mode={objective_mode} "
+        f"unique_bitstrings={len(counts)} "
+        f"success={bool(optimized.success)}"
     )
     return counts, {
         "optimizer": "COBYLA",
@@ -307,11 +309,13 @@ class HybridQAOABackend(OptimizationBackend):
         except Exception as exc:
             require_cudaq = os.getenv("REQUIRE_CUDAQ", "0").strip().lower() in {"1", "true", "yes"}
             if require_cudaq or not hybrid.allow_numpy_fallback:
-                LOGGER.exception(
-                    "HybridQAOA solve failed without fallback requested_target=%s qubits=%s",
-                    target,
-                    problem.dimension,
+                print(
+                    "HybridQAOA solve failed without fallback "
+                    f"requested_target={target} "
+                    f"qubits={problem.dimension} "
+                    f"error={type(exc).__name__}: {exc}"
                 )
+                traceback.print_exc()
                 raise
             counts, raw = _numpy_qaoa(problem, config)
             source = "numpy_statevector_qaoa_fallback"
@@ -322,24 +326,25 @@ class HybridQAOABackend(OptimizationBackend):
             notes.append(
                 "Qamomile/CUDA-Q was unavailable or failed; used the deterministic NumPy statevector QAOA fallback for this run."
             )
-            LOGGER.warning(
-                "HybridQAOA fallback backend=numpy requested_target=%s qubits=%s reason=%s",
-                target,
-                problem.dimension,
-                raw["fallback_reason"],
+            print(
+                "HybridQAOA fallback "
+                "backend=numpy "
+                f"requested_target={target} "
+                f"qubits={problem.dimension} "
+                f"reason={raw['fallback_reason']}"
             )
 
         candidates = _select_candidates(problem, counts, hybrid.top_k, source)
         raw.setdefault("target", target)
         raw.setdefault("execution_backend", "cudaq")
         raw.setdefault("execution_device", "gpu" if target == "nvidia" else "cpu")
-        LOGGER.info(
-            "HybridQAOA solve complete source=%s target=%s execution_device=%s backend_runtime_ms=%.3f candidates=%s",
-            source,
-            raw.get("target"),
-            raw.get("execution_device"),
-            (time.perf_counter() - start) * 1000.0,
-            len(candidates),
+        print(
+            "HybridQAOA solve complete "
+            f"source={source} "
+            f"target={raw.get('target')} "
+            f"execution_device={raw.get('execution_device')} "
+            f"backend_runtime_ms={(time.perf_counter() - start) * 1000.0:.3f} "
+            f"candidates={len(candidates)}"
         )
         return BackendResult(
             backend=BackendKind.HYBRID,
