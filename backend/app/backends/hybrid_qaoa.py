@@ -225,6 +225,8 @@ def _qamomile_cudaq(
 
     def objective(params: np.ndarray) -> float:
         nonlocal objective_mode
+        eval_id = len(trace) + 1
+        print(f"objective eval {eval_id} start")
         try:
             if qaoa_circuit is None:
                 raise RuntimeError("Qamomile produced no CUDA-Q circuit artifact.")
@@ -235,11 +237,14 @@ def _qamomile_cudaq(
                     params=flat_cudaq_parameters(params),
                 )
             )
-        except Exception:
+            print(f"objective eval {eval_id} estimate done value={value}")
+        except Exception as exc:
+            print(f"objective eval {eval_id} estimate failed: {type(exc).__name__}: {exc}")
             # Compatibility fallback for CUDA-Q builds where observe/estimate
             # is unavailable. The final candidate generation still samples.
             objective_mode = "sampled_mean_energy_fallback"
             sample_result = sample_for(params, hybrid.optimizer_shots)
+            print(f"objective eval {eval_id} sample fallback done")
             decoded = converter.decode_to_binary_sampleset(sample_result)
             if hasattr(decoded, "energy_mean"):
                 value = float(decoded.energy_mean())
@@ -250,7 +255,8 @@ def _qamomile_cudaq(
                     evaluate_qubo_energy(problem, bits) * count
                     for bits, count in counts.items()
                 ) / total
-        trace.append({"evaluation": len(trace) + 1, "expectation": value, "parameters": params.tolist()})
+            print(f"objective eval {eval_id} fallback value={value}")
+        trace.append({"evaluation": eval_id, "expectation": value, "parameters": params.tolist()})
         return value
 
     rng = np.random.default_rng(hybrid.random_seed)
