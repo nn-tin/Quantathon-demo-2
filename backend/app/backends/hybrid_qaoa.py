@@ -166,6 +166,13 @@ def _qamomile_cudaq(
     from qamomile.cudaq import CudaqTranspiler
 
     hybrid = config.hybrid_config
+    qaoa_started = time.perf_counter()
+    timing: dict[str, float] = {
+        "estimate_ms": 0.0,
+        "sample_fallback_ms": 0.0,
+        "final_sample_ms": 0.0,
+        "decode_ms": 0.0,
+    }
     print(
         "QAOA runtime "
         "mode=cudaq "
@@ -185,15 +192,21 @@ def _qamomile_cudaq(
         binary_model = BinaryModel.from_qubo(qubo, constant=float(problem.offset))
     except TypeError:
         binary_model = BinaryModel.from_qubo(qubo, float(problem.offset))
+    timing["binary_model_ms"] = (time.perf_counter() - qaoa_started) * 1000.0
 
+    converter_started = time.perf_counter()
     converter = QAOAConverter(binary_model)
     # Normalize the spin Hamiltonian before circuit construction so large UC
     # penalty coefficients do not create unnecessarily extreme phase angles.
     if hasattr(converter, "spin_model") and hasattr(converter.spin_model, "normalize_by_abs_max"):
         converter.spin_model = converter.spin_model.normalize_by_abs_max()
+    timing["converter_ms"] = (time.perf_counter() - converter_started) * 1000.0
+
+    transpile_started = time.perf_counter()
     transpiler = CudaqTranspiler()
     executable = converter.transpile(transpiler, p=hybrid.qaoa_depth)
     executor = transpiler.executor(target=target)
+    timing["transpile_and_executor_ms"] = (time.perf_counter() - transpile_started) * 1000.0
     print(
         "QAOA executor initialized "
         "backend=cudaq "
@@ -230,6 +243,7 @@ def _qamomile_cudaq(
         try:
             if qaoa_circuit is None:
                 raise RuntimeError("Qamomile produced no CUDA-Q circuit artifact.")
+            estimate_started = time.perf_counter()
             value = float(
                 executor.estimate(
                     qaoa_circuit,
@@ -237,14 +251,22 @@ def _qamomile_cudaq(
                     params=flat_cudaq_parameters(params),
                 )
             )
+            estimate_ms = (time.perf_counter() - estimate_started) * 1000.0
+            timing["estimate_ms"] += estimate_ms
             print(f"objective eval {eval_id} estimate done value={value}")
+            print(f"objective eval {eval_id} estimate_ms={estimate_ms:.3f}")
         except Exception as exc:
             print(f"objective eval {eval_id} estimate failed: {type(exc).__name__}: {exc}")
             # Compatibility fallback for CUDA-Q builds where observe/estimate
             # is unavailable. The final candidate generation still samples.
             objective_mode = "sampled_mean_energy_fallback"
+            print(f"objective eval {eval_id} fallback sampling start")
+            fallback_started = time.perf_counter()
             sample_result = sample_for(params, hybrid.optimizer_shots)
+            fallback_ms = (time.perf_counter() - fallback_started) * 1000.0
+            timing["sample_fallback_ms"] += fallback_ms
             print(f"objective eval {eval_id} sample fallback done")
+            print(f"objective eval {eval_id} sample_fallback_ms={fallback_ms:.3f}")
             decoded = converter.decode_to_binary_sampleset(sample_result)
             if hasattr(decoded, "energy_mean"):
                 value = float(decoded.energy_mean())
@@ -267,15 +289,36 @@ def _qamomile_cudaq(
         method="COBYLA",
         options={"maxiter": hybrid.optimizer_evaluations, "rhobeg": 0.35, "tol": 1e-4},
     )
+    timing["optimizer_total_ms"] = (time.perf_counter() - qaoa_started) * 1000.0 - sum(
+        timing[key]
+        for key in ("binary_model_ms", "converter_ms", "transpile_and_executor_ms", "final_sample_ms", "decode_ms")
+        if key in timing
+    )
+    final_sample_started = time.perf_counter()
     final_result = sample_for(np.asarray(optimized.x, dtype=float), hybrid.shots)
+    timing["final_sample_ms"] = (time.perf_counter() - final_sample_started) * 1000.0
+    decode_started = time.perf_counter()
     decoded = converter.decode_to_binary_sampleset(final_result)
     counts = _extract_qamomile_counts(decoded, problem.dimension)
     if not counts:
         # Some versions expose raw CUDA-Q counts on the sample result.
         raw = getattr(final_result, "counts", None) or getattr(final_result, "data", None)
         counts = _extract_qamomile_counts(raw, problem.dimension)
+    timing["decode_ms"] = (time.perf_counter() - decode_started) * 1000.0
     if not counts:
         raise RuntimeError("Qamomile/CUDA-Q returned no decodable bitstrings.")
+    timing["total_qaoa_ms"] = (time.perf_counter() - qaoa_started) * 1000.0
+    print(
+        "QAOA timing "
+        f"binary_model_ms={timing['binary_model_ms']:.3f} "
+        f"converter_ms={timing['converter_ms']:.3f} "
+        f"transpile_and_executor_ms={timing['transpile_and_executor_ms']:.3f} "
+        f"estimate_ms={timing['estimate_ms']:.3f} "
+        f"sample_fallback_ms={timing['sample_fallback_ms']:.3f} "
+        f"final_sample_ms={timing['final_sample_ms']:.3f} "
+        f"decode_ms={timing['decode_ms']:.3f} "
+        f"total_qaoa_ms={timing['total_qaoa_ms']:.3f}"
+    )
     print(
         "QAOA finished "
         "backend=cudaq "
@@ -293,6 +336,7 @@ def _qamomile_cudaq(
         "target": target,
         "success": bool(optimized.success),
         "message": str(optimized.message),
+        "timing_breakdown_ms": timing,
     }
 
 
@@ -340,10 +384,14 @@ class HybridQAOABackend(OptimizationBackend):
                 f"reason={raw['fallback_reason']}"
             )
 
+        candidate_started = time.perf_counter()
         candidates = _select_candidates(problem, counts, hybrid.top_k, source)
+        candidate_ms = (time.perf_counter() - candidate_started) * 1000.0
         raw.setdefault("target", target)
         raw.setdefault("execution_backend", "cudaq")
         raw.setdefault("execution_device", "gpu" if target == "nvidia" else "cpu")
+        raw.setdefault("timing_breakdown_ms", {})
+        raw["timing_breakdown_ms"]["candidate_selection_ms"] = candidate_ms
         print(
             "HybridQAOA solve complete "
             f"source={source} "
@@ -352,6 +400,7 @@ class HybridQAOABackend(OptimizationBackend):
             f"backend_runtime_ms={(time.perf_counter() - start) * 1000.0:.3f} "
             f"candidates={len(candidates)}"
         )
+        print(f"HybridQAOA timing candidate_selection_ms={candidate_ms:.3f}")
         return BackendResult(
             backend=BackendKind.HYBRID,
             status="completed",
