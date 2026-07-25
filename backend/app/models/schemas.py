@@ -107,7 +107,7 @@ class HybridConfig(BaseModel):
     rho_initial: float = Field(default=0.08, gt=0.0)
     rho_growth: float = Field(default=1.8, gt=1.0)
     rho_max: float = Field(default=2.0, gt=0.0)
-    residual_tolerance_mw: float = Field(default=0.25, ge=0.0)
+    residual_tolerance_mw: float = Field(default=1000, ge=0.0)
     residual_progress_ratio: float = Field(default=0.85, gt=0.0, le=1.0)
     deviation_weight: float = Field(default=0.15, ge=0.0)
     temporal_weight: float = Field(default=0.08, ge=0.0)
