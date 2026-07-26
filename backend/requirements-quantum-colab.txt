@@ -1,0 +1,4 @@
+-r requirements.txt
+# Tested compatibility pair for the Qamomile → CUDA-Q integration.
+qamomile[cudaq-cu12]==0.13.0
+cuda-quantum-cu12==0.14.0
