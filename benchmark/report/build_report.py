@@ -13,7 +13,10 @@ from benchmark.config import GENERATOR_COUNTS, GENERATOR_SCALING_QUBITS, QUBIT_B
 
 
 SUMMARY_COLUMNS = [
+    "milp_cost",
+    "hybrid_cost",
     "cost_gap_percent",
+    "runtime_ratio_hybrid_over_milp",
     "hybrid_feasible",
     "milp_feasible",
     "milp_runtime_ms",
@@ -73,7 +76,7 @@ def _plot_method(summary: pd.DataFrame, figures: Path) -> list[str]:
     plt.bar(x, summary["cost_gap_percent_mean"])
     plt.xticks(x, summary["case_id"], rotation=25, ha="right")
     plt.ylabel("Mean Hybrid–MILP cost gap (%)")
-    plt.xlabel("SimBench-derived case")
+    plt.xlabel("IEEE30-derived 24-hour scenario")
     plt.title("Benchmark 1 — Method comparison")
     path = figures / "method_comparison_gap.png"
     _save_plot(path)
@@ -84,7 +87,7 @@ def _plot_method(summary: pd.DataFrame, figures: Path) -> list[str]:
     plt.plot(x, summary["hybrid_runtime_ms_mean"], marker="o", label="Hybrid end-to-end")
     plt.xticks(x, summary["case_id"], rotation=25, ha="right")
     plt.ylabel("Runtime (ms)")
-    plt.xlabel("SimBench-derived case")
+    plt.xlabel("IEEE30-derived 24-hour scenario")
     plt.title("Method runtime on the same case")
     plt.legend()
     path = figures / "method_comparison_runtime.png"
@@ -98,39 +101,71 @@ def _plot_qubit(summary: pd.DataFrame, figures: Path) -> list[str]:
     if summary.empty:
         return outputs
     summary = summary.sort_values("requested_qubits")
+
+    plt.figure(figsize=(8, 4.5))
+    plt.plot(summary["requested_qubits"], summary["hybrid_cost_mean"], marker="o", label="Hybrid QAOA")
+    plt.plot(summary["requested_qubits"], summary["milp_cost_mean"], marker="o", label="HiGHS full UC")
+    plt.xlabel("Active qubits")
+    plt.ylabel("Operating cost")
+    plt.title("Benchmark 2 — Hybrid and Classical cost")
+    plt.legend()
+    path = figures / "qubit_scaling_cost_comparison.png"
+    _save_plot(path)
+    outputs.append(path.name)
+
     plt.figure(figsize=(8, 4.5))
     plt.plot(summary["requested_qubits"], summary["cost_gap_percent_mean"], marker="o")
     plt.xlabel("Active qubits")
-    plt.ylabel("Mean cost gap (%)")
+    plt.ylabel("Mean Hybrid–MILP cost gap (%)")
     plt.title("Benchmark 2 — Qubit sufficiency")
     path = figures / "qubit_scaling_gap.png"
     _save_plot(path)
     outputs.append(path.name)
 
     plt.figure(figsize=(8, 4.5))
-    plt.plot(summary["requested_qubits"], summary["qaoa_runtime_ms_mean"], marker="o", label="QAOA")
+    plt.plot(summary["requested_qubits"], summary["milp_runtime_ms_mean"], marker="o", label="HiGHS full UC")
     plt.plot(summary["requested_qubits"], summary["hybrid_runtime_ms_mean"], marker="o", label="Hybrid end-to-end")
+    plt.plot(summary["requested_qubits"], summary["qaoa_runtime_ms_mean"], marker="o", label="QAOA component")
     plt.xlabel("Active qubits")
     plt.ylabel("Runtime (ms)")
     plt.yscale("log")
-    plt.title("Qubit scaling runtime (log scale)")
+    plt.title("Qubit scaling runtime — Hybrid vs HiGHS")
     plt.legend()
-    path = figures / "qubit_scaling_runtime.png"
+    path = figures / "qubit_scaling_runtime_comparison.png"
     _save_plot(path)
     outputs.append(path.name)
     return outputs
-
 
 def _plot_generator(summary: pd.DataFrame, figures: Path) -> list[str]:
     outputs: list[str] = []
     if summary.empty:
         return outputs
+
+    classical = (
+        summary.sort_values(["generator_count", "requested_qubits"])
+        .drop_duplicates("generator_count")
+        .sort_values("generator_count")
+    )
+
+    plt.figure(figsize=(8, 4.5))
+    plt.plot(classical["generator_count"], classical["milp_cost_mean"], marker="o", label="HiGHS full UC")
+    for qubits, group in summary.groupby("requested_qubits"):
+        group = group.sort_values("generator_count")
+        plt.plot(group["generator_count"], group["hybrid_cost_mean"], marker="o", label=f"Hybrid q={qubits}")
+    plt.xlabel("Number of generators")
+    plt.ylabel("Operating cost")
+    plt.title("Benchmark 3 — Hybrid and Classical cost")
+    plt.legend()
+    path = figures / "generator_scaling_cost_comparison.png"
+    _save_plot(path)
+    outputs.append(path.name)
+
     plt.figure(figsize=(8, 4.5))
     for qubits, group in summary.groupby("requested_qubits"):
         group = group.sort_values("generator_count")
         plt.plot(group["generator_count"], group["cost_gap_percent_mean"], marker="o", label=f"q={qubits}")
     plt.xlabel("Number of generators")
-    plt.ylabel("Mean cost gap (%)")
+    plt.ylabel("Mean Hybrid–MILP cost gap (%)")
     plt.title("Benchmark 3 — Generator scaling quality")
     plt.legend()
     path = figures / "generator_scaling_gap.png"
@@ -138,18 +173,19 @@ def _plot_generator(summary: pd.DataFrame, figures: Path) -> list[str]:
     outputs.append(path.name)
 
     plt.figure(figsize=(8, 4.5))
+    plt.plot(classical["generator_count"], classical["milp_runtime_ms_mean"], marker="o", label="HiGHS full UC")
     for qubits, group in summary.groupby("requested_qubits"):
         group = group.sort_values("generator_count")
-        plt.plot(group["generator_count"], group["hybrid_runtime_ms_mean"], marker="o", label=f"q={qubits}")
+        plt.plot(group["generator_count"], group["hybrid_runtime_ms_mean"], marker="o", label=f"Hybrid q={qubits}")
     plt.xlabel("Number of generators")
-    plt.ylabel("Hybrid end-to-end runtime (ms)")
-    plt.title("Generator scaling runtime")
+    plt.ylabel("End-to-end runtime (ms)")
+    plt.yscale("log")
+    plt.title("Generator scaling runtime — Hybrid vs HiGHS")
     plt.legend()
-    path = figures / "generator_scaling_runtime.png"
+    path = figures / "generator_scaling_runtime_comparison.png"
     _save_plot(path)
     outputs.append(path.name)
     return outputs
-
 
 def _table(frame: pd.DataFrame) -> str:
     if frame.empty:
@@ -177,17 +213,18 @@ def build_report(root: Path) -> Path:
     figures_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    method_records = _read_json(raw_dir / "simbench_method_comparison.json")
-    qubit_records = _read_json(raw_dir / "qubit_budget_scaling.json")
-    generator_records = _read_json(raw_dir / "generator_scaling.json")
+    method_records = _read_json(raw_dir / "ieee30_method_comparison.json")
+    qubit_records = _read_json(raw_dir / "ieee30_qubit_budget_scaling.json")
+    generator_records = _read_json(raw_dir / "ieee30_generator_scaling.json")
+    warmup_records = _read_json(raw_dir / "discarded_quantum_warmups.json")
 
     method_summary = _summary(method_records, ["case_id", "generator_count", "top_k"])
     qubit_summary = _summary(qubit_records, ["requested_qubits", "actual_active_qubits", "top_k"])
     generator_summary = _summary(generator_records, ["generator_count", "requested_qubits", "top_k"])
 
-    method_summary.to_csv(summary_dir / "simbench_method_comparison_summary.csv", index=False)
-    qubit_summary.to_csv(summary_dir / "qubit_budget_scaling_summary.csv", index=False)
-    generator_summary.to_csv(summary_dir / "generator_scaling_summary.csv", index=False)
+    method_summary.to_csv(summary_dir / "ieee30_method_comparison_summary.csv", index=False)
+    qubit_summary.to_csv(summary_dir / "ieee30_qubit_budget_scaling_summary.csv", index=False)
+    generator_summary.to_csv(summary_dir / "ieee30_generator_scaling_summary.csv", index=False)
 
     method_figures = _plot_method(method_summary, figures_dir)
     qubit_figures = _plot_qubit(qubit_summary, figures_dir)
@@ -241,40 +278,44 @@ code {{ color:var(--accent); }}
 <body><main>
 <header>
 <h1>PiL-HQUC Offline Benchmark Report</h1>
-<p>The localhost application remains a GPU Hybrid-only operational demo. This report contains the separated Classical comparison and scaling evidence.</p>
+<p>The localhost application remains a GPU Hybrid-only operational demo. All three offline experiments use the same MATPOWER case30-derived copper-plate UC data family and include a full HiGHS Classical reference.</p>
 <div class="kpis">
 <div class="kpi"><span>Total measured Hybrid runs</span><strong>{len(all_records)}</strong></div>
+<div class="kpi"><span>Discarded first runs</span><strong>{len(warmup_records)}</strong></div>
 <div class="kpi"><span>Hybrid feasibility rate</span><strong>{feasible_rate:.1f}%</strong></div>
 <div class="kpi"><span>Mean cost gap</span><strong>{mean_gap:.3f}%</strong></div>
 <div class="kpi"><span>Validated qubit range</span><strong>8–26</strong></div>
+<div class="kpi"><span>Generator scaling range</span><strong>10–50</strong></div>
 </div>
 </header>
 <section>
 <h2>Fixed quantum protocol</h2>
 <ul>
 <li>Qamomile → CUDA-Q, target <code>nvidia</code>, GPU required.</li>
+<li>Full HiGHS UC reference uses a 0.5% relative MIP-gap target and a 60-second time limit per dataset.</li>
 <li>QAOA depth: {profile.qaoa_depth}; final shots: {profile.shots}; optimizer fallback shots: {profile.optimizer_shots}.</li>
 <li>COBYLA objective evaluations: {profile.optimizer_evaluations}; maximum ADMM-guided rounds: {profile.max_quantum_rounds}.</li>
-<li>Top-K is fixed within qubit scaling and increases with generator count in method/generator scaling.</li>
-<li>One in-process GPU warm-up is discarded; all optimizer evaluations and candidate validation remain inside measured runtime.</li>
+<li>Top-K is 10 in the fixed ten-generator benchmarks and increases as 10, 20, 30, 40, 50 in generator scaling.</li>
+<li>Every unique quantum configuration is executed once as a discarded first run. The second and later runs are the only runs used in statistics.</li>
+<li>The discarded run initializes CUDA, CUDA-Q/Qamomile and circuit-size-specific resources; all optimizer evaluations and candidate validation remain inside each measured runtime.</li>
 </ul>
 <pre>{html.escape(json.dumps(environment, indent=2))}</pre>
 </section>
 <section>
-<h2>Benchmark 1 — SimBench-derived Hybrid vs Classical</h2>
-<p>SimBench annual demand and renewable profiles are converted into aggregated single-bus 24-hour UC cases. The full MILP and Hybrid method solve the same converted case.</p>
+<h2>Benchmark 1 — IEEE30 scenario comparison: Hybrid vs Classical</h2>
+<p>Eight 24-hour demand/renewable scenarios reuse the same ten-unit MATPOWER case30 copper-plate UC adaptation. Full HiGHS UC and the Hybrid method solve the same case at each scenario.</p>
 {_image_tags(method_figures)}
 <div class="table-wrap">{_table(method_summary)}</div>
 </section>
 <section>
-<h2>Benchmark 2 — Active-qubit budget scaling</h2>
-<p>A fixed synthetic 10-generator, 24-hour UC instance is reused at q={QUBIT_BUDGETS}. Top-K stays constant so the active-qubit budget is the controlled variable.</p>
+<h2>Benchmark 2 — Active-qubit budget scaling: Hybrid vs Classical</h2>
+<p>The fixed IEEE30-derived <code>double-peak</code> ten-generator instance is reused at q={QUBIT_BUDGETS}. HiGHS solves the shared full UC once and its result is reused as the Classical reference at every q. Top-K remains 10, so active-qubit budget is the controlled variable.</p>
 {_image_tags(qubit_figures)}
 <div class="table-wrap">{_table(qubit_summary)}</div>
 </section>
 <section>
-<h2>Benchmark 3 — Generator scaling</h2>
-<p>Capacity-normalized synthetic systems use generator counts {GENERATOR_COUNTS} and two fixed active budgets {GENERATOR_SCALING_QUBITS}. Top-K grows with generator count and is identical for q=10 and q=20 at each system size.</p>
+<h2>Benchmark 3 — Generator scaling: Hybrid vs Classical</h2>
+<p>IEEE30-derived fleets are replicated to generator counts {GENERATOR_COUNTS}, while the 24-hour profile, demand factor, renewable penetration and reserve ratio remain structurally consistent. Each size is solved once by full HiGHS UC and compared with Hybrid q={GENERATOR_SCALING_QUBITS}. Top-K equals the generator count and is identical for both q curves at each size.</p>
 {_image_tags(generator_figures)}
 <div class="table-wrap">{_table(generator_summary)}</div>
 </section>

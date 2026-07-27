@@ -1063,9 +1063,12 @@ const WEATHER_PROFILE_PRESETS = [
   createWeatherProfilePreset("mixed-vre"),
 ];
 
-// The generated default remains the internal initial profile. The visible
-// selector contains only user-facing temporal presets.
-const WEATHER_PROFILE_CHOICES = [...WEATHER_PROFILE_PRESETS];
+// Keep the original synthetic profile selectable after the user applies a
+// preset, custom temporal shape, or CSV profile.
+const WEATHER_PROFILE_CHOICES = [
+  DEFAULT_WEATHER_PROFILE,
+  ...WEATHER_PROFILE_PRESETS,
+];
 
 const PRIMARY_METHOD = Object.freeze({
   id: "hybrid",
@@ -1115,12 +1118,18 @@ const WORKFLOW_STEPS = [
 ];
 
 const SOLVE_LOG_SEQUENCE = [
-  { icon: "📥", level: "INPUT", step: 1, total: 6, text: "24h input loaded: demand, renewables, grid limit, and battery state." },
-  { icon: "📐", level: "LP", step: 2, total: 6, text: "LP incumbent generated for the full 24-hour commitment schedule." },
-  { icon: "λ", level: "ADMM", step: 3, total: 6, text: "ADMM-guided active block selected from the highest-pressure decisions." },
-  { icon: "⚛️", level: "QAOA", step: 4, total: 6, text: "Dynamic QUBO mapped to QAOA and executed on the quantum simulator." },
-  { icon: "✅", level: "TOP-K", step: 5, total: 6, text: "Top-K candidates reconstructed and validated with exact dispatch." },
-  { icon: "🏁", level: "DONE", step: 6, total: 6, text: "Final feasible 24-hour operating plan selected." },
+  { icon: "⏳", level: "INIT", step: 1, total: 12, text: "Starting the two-method 24-hour comparison." },
+  { icon: "📥", level: "LOAD", step: 2, total: 12, text: "Loading runtime demand, renewable, grid, and battery profiles." },
+  { icon: "🧮", level: "HIGHS", step: 3, total: 12, text: "Solving the full classical UC baseline with HiGHS." },
+  { icon: "📐", level: "LP", step: 4, total: 12, text: "Solving the LP relaxation and retaining fractional commitment values." },
+  { icon: "🔌", level: "ED", step: 5, total: 12, text: "Running relaxed economic dispatch with shortage and surplus slack." },
+  { icon: "λ", level: "ADMM", step: 6, total: 12, text: "Computing residual and dual pressure for active-block selection." },
+  { icon: "🎯", level: "BLOCK", step: 7, total: 12, text: "Selecting a structured 8–10-variable active block." },
+  { icon: "🧩", level: "QUBO", step: 8, total: 12, text: "Building the ADMM-guided dynamic QUBO." },
+  { icon: "⚛️", level: "QAOA", step: 9, total: 12, text: "Qamomile is converting QUBO to QAOA for CUDA-Q execution." },
+  { icon: "🎲", level: "SAMPLE", step: 10, total: 12, text: "Sampling top candidate bitstrings and reconstructing full schedules." },
+  { icon: "✅", level: "CHECK", step: 11, total: 12, text: "Running exact dispatch and physical validation for every candidate." },
+  { icon: "🏁", level: "DONE", step: 12, total: 12, text: "Comparing Classical and Hybrid results on the same input." },
 ];
 
 function clamp01(value) {
@@ -1650,8 +1659,8 @@ function App() {
     const runSolver = selectedSolver;
     const runLogs = getSolveLogSequence(runSolver.id);
 
-    // Keep the six telemetry steps at the original readable cadence.
-    // The top-right run-status dot uses its own independent 1.1s pulse in CSS.
+    // Presentation telemetry must keep the original readable cadence.
+    // The launch-button status dot has its own independent animation in CSS.
     const firstLogDelay = 620;
     const logInterval = 1050;
     const finalLineReadDelay = 900;
@@ -2524,6 +2533,7 @@ function WorkspacePage({
           <div className="compactHead scenarioLaunchpadHead">
             <div>
               <h3>Operating Scenarios</h3>
+              <span>Select a grid condition.</span>
             </div>
         
             <div
@@ -2540,6 +2550,7 @@ function WorkspacePage({
                 <span className="weatherProfileLauncherIcon" aria-hidden="true">☁</span>
                 <span className="weatherProfileLauncherCopy">
                   <b>24h Profile</b>
+                  <small>{weatherProfile.name}</small>
                 </span>
                 <i aria-hidden="true">⌄</i>
               </button>
@@ -2637,6 +2648,7 @@ function WorkspacePage({
               <div className="compactHead launchpadControlHead railControlHead">
                 <div>
                   <h3>Operating Inputs</h3>
+                  <span>Set demand, renewables, grid limit, and battery level.</span>
                 </div>
               </div>
 
@@ -2654,6 +2666,11 @@ function WorkspacePage({
           <section ref={systemCheckRef} className="towerFeasibilityPanel unifiedValidationGate">
             <div className="towerFeasibilityHead systemCheckSummaryHead">
               <h3>System Check</h3>
+              <span className="systemCheckInlineSummary">
+                {isLoadReady
+                  ? `7 checks · ${workspaceDecisionStats.stressHours} stress hour${workspaceDecisionStats.stressHours === 1 ? "" : "s"}`
+                  : "Waiting for operating inputs"}
+              </span>
             </div>
 
             <span className="validationGateGroupLabel">Initial state</span>
@@ -3431,6 +3448,7 @@ function WorkspaceIntelligence({
       <div className="preOptimizationHead chartStageHead">
         <div>
           <h3>24h Stress Profile</h3>
+          <p>Load, renewables, residual demand, and grid limit.</p>
         </div>
 
         <div className={`readinessBadge ${stats.stressHours > 0 ? "risk" : "safe"}`}>
@@ -3490,7 +3508,7 @@ function OperationalStressChart({ data, gridLimit }) {
         role="img"
         aria-label="24-hour load, variable renewable energy, residual demand, and critical grid-support gap"
       >
-        <text x={4} y={20} textAnchor="start" className="stressAxisTitle">
+        <text x={0} y={20} textAnchor="start" className="stressAxisTitle">
           Power (MW)
         </text>
 
@@ -4033,7 +4051,7 @@ function LivePipelineTelemetry({
             <strong>{solver?.name || "Optimization Pipeline"}</strong>
             <small>
               {isAdaptive
-                ? "6-stage hybrid quantum-classical workflow"
+                ? "9-stage quantum-classical feedback workflow"
                 : "Solver execution and physical validation trace"}
             </small>
           </div>
@@ -4042,10 +4060,10 @@ function LivePipelineTelemetry({
             <i />
             <span>
               {["complete", "handoff"].includes(phase)
-                ? "Complete"
+                ? "Pipeline complete"
                 : backendState === "online"
                   ? "API-connected run"
-                  : "Simulation run"}
+                  : "Demonstration trace"}
             </span>
           </div>
         </div>
@@ -4092,6 +4110,11 @@ function LivePipelineTelemetry({
           })}
         </div>
 
+        <div className="workspaceTelemetryFoot">
+          <span>
+            Scenario → relaxation → scoring → reduced QAOA search → reconstruction → validation → feedback
+          </span>
+        </div>
       </section>
     </div>
   );
@@ -5408,473 +5431,6 @@ function loadExcelJs() {
   return excelJsLoaderPromise;
 }
 
-
-let pdfExportLoaderPromise = null;
-
-function loadExternalExportScript(src, ready) {
-  if (ready()) return Promise.resolve();
-  const existing = document.querySelector(`script[data-export-src="${src}"]`);
-  if (existing) {
-    return new Promise((resolve, reject) => {
-      existing.addEventListener("load", () => ready() ? resolve() : reject(new Error(`Export library did not initialize: ${src}`)), { once: true });
-      existing.addEventListener("error", () => reject(new Error(`Could not load export library: ${src}`)), { once: true });
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.dataset.exportSrc = src;
-    script.onload = () => ready()
-      ? resolve()
-      : reject(new Error(`Export library did not initialize: ${src}`));
-    script.onerror = () => reject(new Error(`Could not load export library: ${src}`));
-    document.head.appendChild(script);
-  });
-}
-
-function loadPdfExportLibraries() {
-  if (window.jspdf?.jsPDF?.API?.autoTable) {
-    return Promise.resolve(window.jspdf.jsPDF);
-  }
-  if (pdfExportLoaderPromise) return pdfExportLoaderPromise;
-
-  pdfExportLoaderPromise = loadExternalExportScript(
-    "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
-    () => Boolean(window.jspdf?.jsPDF)
-  )
-    .then(() => loadExternalExportScript(
-      "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js",
-      () => Boolean(window.jspdf?.jsPDF?.API?.autoTable)
-    ))
-    .then(() => window.jspdf.jsPDF)
-    .catch((error) => {
-      pdfExportLoaderPromise = null;
-      throw error;
-    });
-
-  return pdfExportLoaderPromise;
-}
-
-function pdfSafeText(value) {
-  return String(value ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[–—−]/g, "-")
-    .replace(/[•·]/g, "-")
-    .replace(/[^\x20-\x7E]/g, "");
-}
-
-function customerScheduleState(generator, hour) {
-  const schedule = Array.isArray(generator?.schedule) ? generator.schedule : [];
-  const current = Boolean(schedule[hour]);
-  const initial = Boolean(firstDefinedValue(generator?.initial_status, generator?.initialStatus, current));
-  const previous = hour > 0 ? Boolean(schedule[hour - 1]) : initial;
-  if (current && !previous) return "START";
-  if (!current && previous) return "STOP";
-  return current ? "ON" : "OFF";
-}
-
-function formatCustomerPdfMoney(value) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
-}
-
-function drawCustomerPdfHeader(doc, title, subtitle, metadata) {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  doc.setFillColor(5, 48, 39);
-  doc.rect(0, 0, pageWidth, 25, "F");
-  doc.setTextColor(239, 250, 246);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-  doc.text(pdfSafeText(title), 12, 10);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.text(pdfSafeText(subtitle), 12, 16);
-  doc.setTextColor(178, 222, 210);
-  doc.setFontSize(7.5);
-  doc.text(pdfSafeText(metadata), pageWidth - 12, 10, { align: "right" });
-  doc.text("Customer operating deliverable", pageWidth - 12, 16, { align: "right" });
-}
-
-function drawCustomerPdfMetric(doc, x, y, width, label, value, note = "") {
-  doc.setFillColor(244, 249, 247);
-  doc.setDrawColor(205, 224, 217);
-  doc.roundedRect(x, y, width, 18, 2.2, 2.2, "FD");
-  doc.setTextColor(78, 109, 99);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.8);
-  doc.text(pdfSafeText(label).toUpperCase(), x + 4, y + 5.5);
-  doc.setTextColor(5, 48, 39);
-  doc.setFontSize(11.5);
-  doc.text(pdfSafeText(value), x + 4, y + 11.6);
-  if (note) {
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(95, 122, 113);
-    doc.setFontSize(6.2);
-    doc.text(pdfSafeText(note), x + 4, y + 15.4);
-  }
-}
-
-function addCustomerPdfFooters(doc, scenario) {
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let page = 1; page <= pageCount; page += 1) {
-    doc.setPage(page);
-    const width = doc.internal.pageSize.getWidth();
-    const height = doc.internal.pageSize.getHeight();
-    doc.setDrawColor(218, 230, 226);
-    doc.line(12, height - 10, width - 12, height - 10);
-    doc.setTextColor(105, 128, 120);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.8);
-    doc.text(
-      pdfSafeText(`${scenario} - operational recommendation; operator approval is required before execution.`),
-      12,
-      height - 5.5
-    );
-    doc.text(`Page ${page} of ${pageCount}`, width - 12, height - 5.5, { align: "right" });
-  }
-}
-
-function buildCustomerSchedulePrintHtml(plan) {
-  const summary = plan?.summary || {};
-  const generators = Array.isArray(plan?.generators) ? plan.generators : [];
-  const actions = Array.isArray(plan?.recommended_actions) ? plan.recommended_actions : [];
-  const hourly = Array.isArray(plan?.hourly_dispatch) ? plan.hourly_dispatch : plan?.hourly_supply || [];
-  const scenario = summary.scenario || "Selected scenario";
-  const generated = new Date().toLocaleString("en-US");
-  const escape = (value) => String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-
-  const metricBar = `
-    <div class="metrics">
-      <div class="metric"><span>Cost</span><b>${escape(formatCustomerPdfMoney(summary.validated_cost))}</b></div>
-      <div class="metric"><span>Demand Coverage</span><b>${escape(`${summary.feasible_hours || 0}/${summary.total_hours || 24} h`)}</b></div>
-      <div class="metric"><span>Unused Renewables</span><b>${Number(summary.curtailment_mwh || 0).toFixed(2)} MWh</b></div>
-      <div class="metric"><span>Renewable Share</span><b>${Number(summary.renewable_share_percent || 0).toFixed(1)}%</b></div>
-    </div>`;
-
-  const pageHeader = (section) => `
-    <header class="report-header">
-      <div>
-        <span>Operating Output</span>
-        <h1>${escape(scenario)} - Recommended Schedule</h1>
-        <p>${escape(summary.method_label || "Hybrid QAOA")} - Validated Schedule</p>
-      </div>
-      <div class="report-meta"><b>${escape(section)}</b><small>Generated ${escape(generated)}</small></div>
-    </header>
-    ${metricBar}`;
-
-  const dispatchRows = hourly.map((row) => {
-    const totalSupply = Number(row.total_actual_supply_mw ?? row.total_supply_mw ?? 0);
-    return `<tr>
-      <td>${escape(row.time || formatHour(row.hour))}</td>
-      <td>${Number(row.demand_mw || 0).toFixed(1)}</td>
-      <td>${Number(row.solar_used_mw ?? row.solar_mw ?? 0).toFixed(1)}</td>
-      <td>${Number(row.wind_used_mw ?? row.wind_mw ?? 0).toFixed(1)}</td>
-      <td>${Number(row.battery_discharge_mw || 0).toFixed(1)}</td>
-      <td>${Number(row.grid_import_mw || 0).toFixed(1)}</td>
-      <td>${Number(row.total_dispatchable_generation_mw ?? row.dispatchable_generation_mw ?? 0).toFixed(1)}</td>
-      <td>${totalSupply.toFixed(1)}</td>
-      <td class="status">${escape(row.operating_status || "PASS")}</td>
-    </tr>`;
-  }).join("");
-
-  const scheduleHead = Array.from({ length: 24 }, (_, hour) => `<th>${String(hour).padStart(2, "0")}</th>`).join("");
-  const scheduleRows = generators.map((generator) => {
-    const cells = Array.from({ length: 24 }, (_, hour) => {
-      const state = customerScheduleState(generator, hour);
-      return `<td class="${state.toLowerCase()}">${state}</td>`;
-    }).join("");
-    return `<tr><th>${escape(generator.resource_id || generator.id)}<small>${escape(generator.role || generator.name || "Unit")}</small></th>${cells}</tr>`;
-  }).join("");
-
-  const actionRows = actions.map((action, index) => `<tr>
-    <td>${escape(action.time || formatHour(action.hour))}</td>
-    <td>${escape(action.resource_name || action.resource_id || "System")}</td>
-    <td>${escape(getActionLogLabel(action, actions, index))}</td>
-    <td>${escape(actionPowerLabel(action))}</td>
-    <td>${escape(getCompactOperatingReason(action))}</td>
-  </tr>`).join("");
-
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(scenario)} - Recommended Schedule</title><style>
-    @page{size:A4 landscape;margin:10mm}
-    *{box-sizing:border-box}
-    body{font-family:Inter,Arial,sans-serif;color:#073b2b;margin:0;background:#fff}
-    .report-page{min-height:186mm;break-after:page;page-break-after:always;position:relative}
-    .report-page:last-child{break-after:auto;page-break-after:auto}
-    .report-header{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 10px;border-radius:8px;background:#053027;color:#effaf6}
-    .report-header span{display:block;color:#60e5c2;font-size:7px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
-    .report-header h1{font-size:18px;line-height:1.1;margin:3px 0}
-    .report-header p{margin:0;color:#b9dacf;font-size:8px}
-    .report-meta{text-align:right}.report-meta b{display:block;font-size:11px}.report-meta small{display:block;margin-top:5px;color:#b9dacf;font-size:7px}
-    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:7px 0 8px}
-    .metric{border:1px solid #cfe0da;border-radius:6px;padding:6px 8px;background:#f6faf8}
-    .metric span{display:block;color:#5b7068;font-size:7px}.metric b{display:block;font-size:12px;margin-top:2px}
-    h2{font-size:13px;margin:7px 0 5px}.section-note{margin:-2px 0 5px;color:#657a72;font-size:7px}
-    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:6.5px}
-    th,td{border:1px solid #dbe7e2;padding:2.2px 2px;text-align:center;line-height:1.15}
-    thead th{background:#073b2b;color:#fff;font-weight:700}
-    tbody tr:nth-child(even){background:#f8fbfa}
-    .dispatch-table th:first-child,.dispatch-table td:first-child{width:9%}
-    .dispatch-table td.status{font-weight:700;color:#087356;background:#e3f7ef}
-    .schedule-table{font-size:5.2px}.schedule-table th:first-child{width:18mm;text-align:left}.schedule-table tbody th{padding-left:4px;white-space:nowrap}.schedule-table tbody th small{display:block;font-weight:400;color:#61756e;font-size:4.7px}
-    .on{background:#dff8ee}.start{background:#dff7fb}.stop{background:#ffe7e7;color:#8d2c2c}.off{color:#8ca099}
-    .actions-table th:nth-child(1){width:11%}.actions-table th:nth-child(2){width:19%}.actions-table th:nth-child(3){width:21%}.actions-table th:nth-child(4){width:14%}.actions-table th:nth-child(5){width:35%}
-    .actions-table td:nth-child(2),.actions-table td:nth-child(3),.actions-table td:nth-child(5){text-align:left}
-    .footer-note{position:absolute;left:0;right:0;bottom:0;border-top:1px solid #dbe7e2;padding-top:4px;color:#687c75;font-size:6.5px}
-  </style></head><body>
-    <section class="report-page">
-      ${pageHeader("Power Supply")}
-      <h2>Power Supply</h2>
-      <p class="section-note">The screen chart is converted to an hourly customer table for precise operational use.</p>
-      <table class="dispatch-table"><thead><tr><th>Time</th><th>Demand</th><th>Solar</th><th>Wind</th><th>Battery</th><th>Grid</th><th>Diesel</th><th>Total Supply</th><th>Status</th></tr></thead><tbody>${dispatchRows}</tbody></table>
-      <div class="footer-note">Operational recommendation only. Operator approval is required before execution.</div>
-    </section>
-    <section class="report-page">
-      ${pageHeader("Generator On / Off")}
-      <h2>Generator On / Off</h2>
-      <p class="section-note">START = start unit, ON = running, STOP = stop unit, OFF = not committed.</p>
-      <table class="schedule-table"><thead><tr><th>Unit</th>${scheduleHead}</tr></thead><tbody>${scheduleRows}</tbody></table>
-      <div class="footer-note">Operational recommendation only. Operator approval is required before execution.</div>
-    </section>
-    <section class="report-page">
-      ${pageHeader("Action Log")}
-      <h2>Action Log</h2>
-      <table class="actions-table"><thead><tr><th>Time</th><th>Asset</th><th>Action</th><th>Status</th><th>Note</th></tr></thead><tbody>${actionRows || '<tr><td>-</td><td>System</td><td>Follow schedule</td><td>Scheduled</td><td>No discrete operating actions were returned.</td></tr>'}</tbody></table>
-      <div class="footer-note">Operational recommendation only. Operator approval is required before execution.</div>
-    </section>
-  </body></html>`;
-}
-function openCustomerSchedulePrintFallback(plan) {
-  const frame = document.createElement("iframe");
-  frame.setAttribute("aria-hidden", "true");
-  frame.style.position = "fixed";
-  frame.style.right = "0";
-  frame.style.bottom = "0";
-  frame.style.width = "0";
-  frame.style.height = "0";
-  frame.style.border = "0";
-  frame.style.opacity = "0";
-  document.body.appendChild(frame);
-
-  const printWindow = frame.contentWindow;
-  const printDocument = printWindow?.document;
-  if (!printWindow || !printDocument) {
-    frame.remove();
-    throw new Error("The browser could not create the PDF print view.");
-  }
-
-  frame.addEventListener("load", () => {
-    window.setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-      window.setTimeout(() => frame.remove(), 1200);
-    }, 250);
-  }, { once: true });
-  printDocument.open();
-  printDocument.write(buildCustomerSchedulePrintHtml(plan));
-  printDocument.close();
-  return "print";
-}
-
-async function exportCustomerSchedulePdf(plan, result) {
-  const exportPlan = buildFrontendAuditExportPlan(plan, result);
-  const summary = exportPlan.summary || {};
-  const scenario = summary.scenario || "Selected scenario";
-  const generators = Array.isArray(exportPlan.generators) ? exportPlan.generators : [];
-  const actions = Array.isArray(exportPlan.recommended_actions) ? exportPlan.recommended_actions : [];
-  const hourly = Array.isArray(exportPlan.hourly_dispatch) ? exportPlan.hourly_dispatch : [];
-  const stressSet = new Set((summary.high_demand_hours || []).map(normalizeHourValue));
-
-  let JsPdf;
-  try {
-    JsPdf = await loadPdfExportLibraries();
-  } catch (error) {
-    console.warn("Direct PDF library unavailable; opening the browser print fallback.", error);
-    return openCustomerSchedulePrintFallback(exportPlan);
-  }
-
-  const doc = new JsPdf({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const generated = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-  const metricGap = 4;
-  const metricWidth = (pageWidth - 24 - metricGap * 3) / 4;
-
-  const drawScreenPageTop = (sectionLabel) => {
-    drawCustomerPdfHeader(
-      doc,
-      `${scenario} - Recommended Schedule`,
-      `${summary.method_label || "Hybrid QAOA"} - Validated Schedule`,
-      sectionLabel
-    );
-    drawCustomerPdfMetric(doc, 12, 31, metricWidth, "Cost", formatCustomerPdfMoney(summary.validated_cost), "Validated plan");
-    drawCustomerPdfMetric(doc, 12 + (metricWidth + metricGap), 31, metricWidth, "Demand Coverage", `${summary.feasible_hours || 0}/${summary.total_hours || 24} h`, summary.all_constraints_passed ? "Passed" : "Review required");
-    drawCustomerPdfMetric(doc, 12 + (metricWidth + metricGap) * 2, 31, metricWidth, "Unused Renewables", `${Number(summary.curtailment_mwh || 0).toFixed(2)} MWh`, "24-hour total");
-    drawCustomerPdfMetric(doc, 12 + (metricWidth + metricGap) * 3, 31, metricWidth, "Renewable Share", `${Number(summary.renewable_share_percent || 0).toFixed(1)}%`, "Of served demand");
-    doc.setTextColor(105, 128, 120);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.6);
-    doc.text(`Generated ${pdfSafeText(generated)}`, pageWidth - 12, 23, { align: "right" });
-  };
-
-  // Page 1 - the Power Supply screen, with the chart converted to a table.
-  drawScreenPageTop("Power Supply");
-  doc.setTextColor(5, 48, 39);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("Power Supply", 12, 56);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(89, 116, 107);
-  doc.setFontSize(6.8);
-  doc.text("The screen chart is represented as an hourly table for precise customer use.", 12, 60.5);
-
-  doc.autoTable({
-    startY: 64,
-    head: [["Time", "Demand", "Solar", "Wind", "Battery", "Grid", "Diesel", "Total Supply", "Status"]],
-    body: hourly.map((row) => [
-      pdfSafeText(row.time || formatHour(row.hour)),
-      Number(row.demand_mw || 0).toFixed(1),
-      Number(row.solar_used_mw ?? row.solar_mw ?? 0).toFixed(1),
-      Number(row.wind_used_mw ?? row.wind_mw ?? 0).toFixed(1),
-      Number(row.battery_discharge_mw || 0).toFixed(1),
-      Number(row.grid_import_mw || 0).toFixed(1),
-      Number(row.total_dispatchable_generation_mw ?? row.dispatchable_generation_mw ?? 0).toFixed(1),
-      Number(row.total_actual_supply_mw ?? row.total_supply_mw ?? 0).toFixed(1),
-      pdfSafeText(row.operating_status || "PASS"),
-    ]),
-    margin: { left: 12, right: 12, bottom: 14 },
-    styles: { font: "helvetica", fontSize: 6.35, cellPadding: 1.2, halign: "right", valign: "middle", lineColor: [222, 232, 228], lineWidth: 0.12, textColor: [20, 64, 52] },
-    headStyles: { fillColor: [5, 48, 39], textColor: [246, 253, 250], fontStyle: "bold", halign: "center" },
-    columnStyles: { 0: { cellWidth: 19, halign: "center" }, 8: { cellWidth: 22, halign: "center", fontStyle: "bold" } },
-    alternateRowStyles: { fillColor: [249, 252, 251] },
-    didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 0) {
-        const hour = normalizeHourValue(data.row.raw?.[0]);
-        if (stressSet.has(hour)) {
-          data.cell.styles.fillColor = [252, 240, 203];
-          data.cell.styles.textColor = [102, 78, 15];
-          data.cell.styles.fontStyle = "bold";
-        }
-      }
-      if (data.section === "body" && data.column.index === 8) {
-        const passed = String(data.cell.raw || "PASS").toUpperCase() === "PASS";
-        data.cell.styles.fillColor = passed ? [220, 247, 237] : [255, 229, 229];
-        data.cell.styles.textColor = passed ? [20, 100, 75] : [139, 42, 42];
-      }
-    },
-  });
-
-  // Page 2 - the Generator On / Off screen.
-  doc.addPage("a4", "landscape");
-  drawScreenPageTop("Generator On / Off");
-  doc.setTextColor(5, 48, 39);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("Generator On / Off", 12, 56);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(89, 116, 107);
-  doc.setFontSize(6.8);
-  doc.text("START = start unit, ON = running, STOP = stop unit, OFF = not committed. Gold headers mark high-demand hours.", 12, 60.5);
-
-  const scheduleHeaders = [
-    "Unit",
-    "Role",
-    ...Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0")),
-    "Online",
-    "Final",
-  ];
-  const scheduleBody = generators.map((generator) => [
-    pdfSafeText(generator.resource_id || generator.id),
-    pdfSafeText(generator.role || generator.name || "Generator"),
-    ...Array.from({ length: 24 }, (_, hour) => customerScheduleState(generator, hour)),
-    `${Number(generator.online_hours ?? generator.schedule?.filter(Boolean).length ?? 0)} h`,
-    generator.final_state || (generator.schedule?.[23] ? "ON" : "OFF"),
-  ]);
-  const scheduleColumnStyles = {
-    0: { cellWidth: 20, halign: "left", fontStyle: "bold" },
-    1: { cellWidth: 22, halign: "left" },
-    26: { cellWidth: 13 },
-    27: { cellWidth: 11 },
-  };
-  for (let index = 2; index <= 25; index += 1) scheduleColumnStyles[index] = { cellWidth: 7.3 };
-
-  doc.autoTable({
-    startY: 64,
-    head: [scheduleHeaders],
-    body: scheduleBody.length ? scheduleBody : [["No units returned", "-", ...Array(24).fill("OFF"), "0 h", "OFF"]],
-    margin: { left: 12, right: 12, bottom: 14 },
-    tableWidth: "auto",
-    styles: { font: "helvetica", fontSize: 5.2, cellPadding: 0.9, halign: "center", valign: "middle", lineColor: [218, 230, 226], lineWidth: 0.15, textColor: [20, 64, 52] },
-    headStyles: { fillColor: [5, 48, 39], textColor: [246, 253, 250], fontStyle: "bold", fontSize: 5.3 },
-    columnStyles: scheduleColumnStyles,
-    alternateRowStyles: { fillColor: [249, 252, 251] },
-    didParseCell: (data) => {
-      if (data.section === "head" && data.column.index >= 2 && data.column.index <= 25) {
-        const hour = data.column.index - 2;
-        if (stressSet.has(hour)) {
-          data.cell.styles.fillColor = [244, 194, 68];
-          data.cell.styles.textColor = [45, 43, 20];
-        }
-      }
-      if (data.section === "body" && data.column.index >= 2 && data.column.index <= 25) {
-        const value = String(data.cell.raw || "OFF");
-        if (value === "ON") data.cell.styles.fillColor = [220, 247, 237];
-        if (value === "START") data.cell.styles.fillColor = [213, 245, 250];
-        if (value === "STOP") { data.cell.styles.fillColor = [255, 229, 229]; data.cell.styles.textColor = [139, 42, 42]; }
-        if (value === "OFF") data.cell.styles.textColor = [139, 157, 151];
-        const hour = data.column.index - 2;
-        if (stressSet.has(hour)) data.cell.styles.lineColor = [221, 169, 39];
-      }
-    },
-  });
-
-  // Page 3 - the Action Log screen.
-  doc.addPage("a4", "landscape");
-  drawScreenPageTop("Action Log");
-  doc.setTextColor(5, 48, 39);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("Action Log", 12, 56);
-
-  const visibleActions = actions.slice(0, 16);
-  const actionBody = visibleActions.length
-    ? visibleActions.map((action, index) => [
-        pdfSafeText(action.time || formatHour(action.hour)),
-        pdfSafeText(action.resource_name || action.resource_id || "System"),
-        pdfSafeText(getActionLogLabel(action, actions, index)),
-        pdfSafeText(actionPowerLabel(action)),
-        pdfSafeText(getCompactOperatingReason(action)),
-      ])
-    : [["-", "System", "Follow schedule", "Scheduled", "No discrete operating actions were returned"]];
-
-  if (actions.length > visibleActions.length) {
-    actionBody.push(["-", "System", "Additional actions", `${actions.length - visibleActions.length} more`, "See the raw audit export for the complete event list"]);
-  }
-
-  doc.autoTable({
-    startY: 61,
-    head: [["Time", "Asset", "Action", "Status", "Note"]],
-    body: actionBody,
-    margin: { left: 12, right: 12, bottom: 14 },
-    styles: { font: "helvetica", fontSize: actionBody.length > 11 ? 6.1 : 7.2, cellPadding: actionBody.length > 11 ? 1.3 : 2, lineColor: [218, 230, 226], lineWidth: 0.15, textColor: [20, 64, 52], valign: "middle" },
-    headStyles: { fillColor: [5, 48, 39], textColor: [246, 253, 250], fontStyle: "bold" },
-    columnStyles: { 0: { cellWidth: 20, halign: "center" }, 1: { cellWidth: 46 }, 2: { cellWidth: 52 }, 3: { cellWidth: 32, halign: "center", fontStyle: "bold" }, 4: { cellWidth: 120 } },
-    alternateRowStyles: { fillColor: [249, 252, 251] },
-  });
-
-  addCustomerPdfFooters(doc, scenario);
-  doc.save(`${safeFilePart(scenario)}-customer-unit-schedule.pdf`);
-  return "download";
-}
 function actionPowerLabel(action) {
   const power = Number(action?.power_mw);
   if (Number.isFinite(power) && Math.abs(power) > 0.0001) return `${power.toFixed(1)} MW`;
@@ -7000,6 +6556,80 @@ function RuntimeQualityPanel({ view }) {
   );
 }
 
+function CompareMethodsModal({
+  view,
+  running,
+  solvePhase,
+  onClose,
+}) {
+  const [activeTab, setActiveTab] = useState("breakdown");
+
+  useEffect(() => {
+    function closeOnEscape(event) {
+      if (event.key === "Escape") onClose();
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const modal = (
+    <div className="methodModalBackdrop portalOverlayLayer" role="presentation" onMouseDown={onClose}>
+      <section
+        className={`methodModal ${activeTab === "summary" ? "conclusionModal" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="method-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="methodModalHeader">
+          <div>
+            <span className="kicker">Decision Evidence</span>
+            <h3 id="method-modal-title">Why This Plan?</h3>
+            <p>Cost, convergence, and validation behind the selected schedule.</p>
+          </div>
+          <button type="button" className="methodModalClose" onClick={onClose} aria-label="Close comparison modal">×</button>
+        </header>
+
+        <nav className="methodModalTabs" aria-label="Plan selection evidence">
+          {[
+            ["breakdown", "Cost Breakdown"],
+            ["comparison", "Classical vs Hybrid"],
+            ["convergence", "QAOA Convergence"],
+            ["runtime", "Runtime–Quality"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={activeTab === id ? "active" : ""}
+              onClick={() => setActiveTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div className={`methodModalBody ${activeTab}`}>
+          {activeTab === "breakdown" && <CostBreakdownChart view={view} />}
+          {activeTab === "comparison" && <FinalReportPanel view={view} />}
+          {activeTab === "convergence" && (
+            <QAOAConvergencePanel
+              data={view.convergence}
+              view={view}
+              running={running}
+              solvePhase={solvePhase}
+            />
+          )}
+          {activeTab === "runtime" && <RuntimeQualityPanel view={view} />}
+        </div>
+      </section>
+    </div>
+  );
+
+  return createPortal(modal, document.body);
+}
+
+
 function getShortResourceName(action) {
   const raw = String(action?.resource_name || action?.resource_id || "System").trim();
   return raw
@@ -7397,13 +7027,13 @@ function ResultsPage({
   setPage,
   runDemo,
 }) {
+  const [isComparisonOpen, setIsComparisonOpen] = useState(false);
   const [scheduleView, setScheduleView] = useState("dispatch");
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [selectedUnitAnchor, setSelectedUnitAnchor] = useState(null);
   const [showUnusedUnits, setShowUnusedUnits] = useState(false);
   const [selectedOperatingEventHour, setSelectedOperatingEventHour] = useState(null);
   const [hoveredOperatingEventHour, setHoveredOperatingEventHour] = useState(null);
-  const [pdfExportState, setPdfExportState] = useState("idle");
   const view = useMemo(
     () => buildAdvancedResultView(result, selectedScenario, selectedSolver),
     [result, selectedScenario, selectedSolver]
@@ -7496,20 +7126,6 @@ function ResultsPage({
     operatingPlan.summary.curtailment_mwh ?? selectedMethod.curtailment ?? 0
   );
 
-  const handlePdfExport = async () => {
-    if (pdfExportState === "exporting") return;
-    setPdfExportState("exporting");
-    try {
-      await exportCustomerSchedulePdf(operatingPlan, result);
-      setPdfExportState("success");
-      window.setTimeout(() => setPdfExportState("idle"), 2200);
-    } catch (error) {
-      console.error("Schedule PDF export failed.", error);
-      setPdfExportState("error");
-      window.setTimeout(() => setPdfExportState("idle"), 3200);
-    }
-  };
-
   return (
     <section className="resultsViewport pageEnter operatorResultsPage operatorDecisionBoard plainOperatorBoard">
       <header className="operatorResultsHeader compactOperatorHeader">
@@ -7521,26 +7137,6 @@ function ResultsPage({
         </div>
 
         <div className="resultActions operatorHeaderActions">
-          <button
-            type="button"
-            className={`schedulePdfExportButton ${pdfExportState}`}
-            onClick={handlePdfExport}
-            disabled={pdfExportState === "exporting"}
-            aria-label="Export the customer unit schedule as a PDF"
-          >
-            <span className="schedulePdfExportIcon" aria-hidden="true">
-              {pdfExportState === "exporting" ? "..." : pdfExportState === "success" ? "OK" : "PDF"}
-            </span>
-            <strong>
-              {pdfExportState === "exporting"
-                ? "Preparing PDF..."
-                : pdfExportState === "success"
-                  ? "PDF Downloaded"
-                  : pdfExportState === "error"
-                    ? "Try PDF Export Again"
-                    : "Export Schedule PDF"}
-            </strong>
-          </button>
           <button className="secondaryCta" onClick={() => setPage(1)}>Back to Workspace</button>
         </div>
       </header>

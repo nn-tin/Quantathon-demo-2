@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Iterable
 
 from app.services.pipeline import PipelineService
-from benchmark.config import QUBIT_BUDGETS, QUBIT_SCALING_SCENARIO
-from benchmark.data.block_mapping import benchmark_top_k, qubit_scaling_block
+from benchmark.config import IEEE30_CASES, METHOD_COMPARISON_QUBITS
+from benchmark.data.block_mapping import benchmark_top_k, generator_scaling_block
 from benchmark.data.ieee30_factory import IEEE30_BASE_GENERATOR_COUNT, IEEE30_SOURCE_URL, build_ieee30_dataset
 from benchmark.runner import (
     cost_gap_percent,
@@ -19,32 +19,31 @@ def run(
     service: PipelineService,
     *,
     seeds: Iterable[int],
-    qubit_budgets: Iterable[int] = QUBIT_BUDGETS,
+    cases=IEEE30_CASES,
     quiet: bool = True,
     warmup_records: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
-    generator_count = IEEE30_BASE_GENERATOR_COUNT
-    dataset = build_ieee30_dataset(QUBIT_SCALING_SCENARIO, generator_count=generator_count)
-    classical = run_classical_case(dataset)
-    top_k = benchmark_top_k(generator_count)
     records: list[dict[str, object]] = []
+    generator_count = IEEE30_BASE_GENERATOR_COUNT
+    shape = generator_scaling_block(generator_count, METHOD_COMPARISON_QUBITS)
+    top_k = benchmark_top_k(generator_count)
 
-    for qubit_budget in qubit_budgets:
-        qubit_budget = int(qubit_budget)
-        shape = qubit_scaling_block(qubit_budget)
-        configuration_id = f"ieee30-qubit-scaling:{QUBIT_SCALING_SCENARIO}:g{generator_count}:q{qubit_budget}"
+    for case in cases:
+        dataset = build_ieee30_dataset(case.case_id, generator_count=generator_count)
+        classical = run_classical_case(dataset)
+        configuration_id = f"ieee30:{case.case_id}:g{generator_count}:q{METHOD_COMPARISON_QUBITS}"
         warmup = warmup_hybrid_configuration(
             service,
             dataset,
-            qubit_budget=qubit_budget,
+            qubit_budget=METHOD_COMPARISON_QUBITS,
             shape=shape,
             top_k=top_k,
             configuration_id=configuration_id,
             quiet=quiet,
         )
         warmup.update({
-            "experiment": "ieee30_qubit_budget_scaling",
-            "case_id": dataset.id,
+            "experiment": "ieee30_method_comparison",
+            "case_id": case.case_id,
             "generator_count": generator_count,
         })
         if warmup_records is not None:
@@ -58,16 +57,16 @@ def run(
             hybrid = run_hybrid_case(
                 service,
                 dataset,
-                qubit_budget=qubit_budget,
+                qubit_budget=METHOD_COMPARISON_QUBITS,
                 shape=shape,
                 top_k=top_k,
                 seed=int(seed),
                 quiet=quiet,
             )
             record: dict[str, object] = {
-                "experiment": "ieee30_qubit_budget_scaling",
-                "case_id": dataset.id,
-                "scenario_id": QUBIT_SCALING_SCENARIO,
+                "experiment": "ieee30_method_comparison",
+                "case_id": case.case_id,
+                "case_description": case.description,
                 "data_family": "MATPOWER case30 copper-plate adaptation",
                 "data_source": IEEE30_SOURCE_URL,
                 "generator_count": generator_count,
@@ -87,7 +86,6 @@ def run(
                 float(record["hybrid_runtime_ms"])
                 / max(float(record["milp_runtime_ms"]), 1e-9)
             )
-            record["classical_reference_reused"] = True
             records.append(record)
             print_case(record)
     return records

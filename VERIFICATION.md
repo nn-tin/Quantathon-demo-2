@@ -9,7 +9,7 @@
 - [x] Active block fills non-rectangular budgets such as q=14 and q=26.
 - [x] Duplicate ED solves removed from the outer loop.
 - [x] Final feasible flag reuses full candidate validation.
-- [x] One in-process warm-up is excluded from benchmark records.
-- [x] Three benchmark experiments are separated.
+- [x] One full first-run warm-up is discarded for every unique quantum configuration.
+- [x] All three separated benchmarks use the IEEE30-derived data family.
 - [x] HTML report generation included.
-- [x] Backend tests pass.
+- [x] Backend and benchmark tests pass (15/15).

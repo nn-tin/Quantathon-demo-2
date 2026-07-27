@@ -17,7 +17,11 @@ from app.classical.full_uc import solve_full_uc_highs
 from app.config.quantum_profile import build_fixed_hybrid_config
 from app.models.schemas import DatasetModel, RunConfig
 from app.services.pipeline import PipelineService
-from benchmark.config import CLASSICAL_MIP_GAP, CLASSICAL_TIME_LIMIT_SECONDS
+from benchmark.config import (
+    CLASSICAL_MIP_GAP,
+    CLASSICAL_TIME_LIMIT_SECONDS,
+    WARMUP_SEED,
+)
 from benchmark.data.block_mapping import BlockShape
 
 
@@ -51,7 +55,6 @@ def environment_metadata() -> dict[str, Any]:
     for package_name, import_name in (
         ("cuda-quantum", "cudaq"),
         ("qamomile", "qamomile"),
-        ("simbench", "simbench"),
     ):
         try:
             module = __import__(import_name)
@@ -61,28 +64,41 @@ def environment_metadata() -> dict[str, Any]:
     return metadata
 
 
-def warmup_gpu(service: PipelineService, dataset: DatasetModel, shape: BlockShape) -> None:
-    """Run one discarded in-process case to initialize CUDA/Qamomile."""
+def warmup_hybrid_configuration(
+    service: PipelineService,
+    dataset: DatasetModel,
+    *,
+    qubit_budget: int,
+    shape: BlockShape,
+    top_k: int,
+    configuration_id: str,
+    quiet: bool = True,
+) -> dict[str, Any]:
+    """Run and discard one full Hybrid solve for a quantum configuration.
 
-    config = RunConfig(
-        dataset_id=dataset.id,
-        run_mode="benchmark_warmup",
-        hybrid_config=build_fixed_hybrid_config(
-            qubit_budget=shape.total_positions,
-            candidate_generators=shape.candidate_generators,
-            candidate_hours=shape.candidate_hours,
-            top_k=10,
-            random_seed=1,
-        ),
+    This first run initializes the CUDA context, CUDA-Q/Qamomile resources and
+    circuit-size-specific runtime state. The returned record is written only to
+    ``discarded_quantum_warmups.*`` and is never included in benchmark
+    summaries, plots, runtime ratios or conclusions.
+    """
+
+    result = run_hybrid_case(
+        service,
+        dataset,
+        qubit_budget=qubit_budget,
+        shape=shape,
+        top_k=top_k,
+        seed=WARMUP_SEED,
+        quiet=quiet,
+        run_mode="benchmark_warmup_discarded",
     )
-    with contextlib.redirect_stdout(io.StringIO()):
-        summary = service.execute_dataset(dataset, config)
-    hybrid = summary.result["hybrid"]
-    if str(hybrid.get("execution_device", "")).lower() != "gpu":
-        raise RuntimeError(
-            "Warm-up did not execute on GPU: "
-            f"{hybrid.get('execution_device')} / {hybrid.get('quantum_target')}"
-        )
+    return {
+        "configuration_id": configuration_id,
+        "discarded": True,
+        "warmup_seed": WARMUP_SEED,
+        "timing_protocol": "first_run_discarded_second_and_later_measured",
+        **result,
+    }
 
 
 def run_classical_case(dataset: DatasetModel) -> dict[str, Any]:
@@ -110,6 +126,7 @@ def run_hybrid_case(
     top_k: int,
     seed: int,
     quiet: bool = True,
+    run_mode: str = "offline_benchmark",
 ) -> dict[str, Any]:
     if shape.total_positions != qubit_budget:
         raise ValueError(
@@ -117,7 +134,7 @@ def run_hybrid_case(
         )
     config = RunConfig(
         dataset_id=dataset.id,
-        run_mode="offline_benchmark",
+        run_mode=run_mode,
         hybrid_config=build_fixed_hybrid_config(
             qubit_budget=qubit_budget,
             candidate_generators=shape.candidate_generators,
@@ -128,8 +145,11 @@ def run_hybrid_case(
     )
     output = io.StringIO()
     context = contextlib.redirect_stdout(output) if quiet else contextlib.nullcontext()
+    # Each warm-up/measured solve starts from a fresh DatasetModel and a
+    # fresh RunConfig. Only process-level CUDA/CUDA-Q caches survive.
+    fresh_dataset = dataset.model_copy(deep=True)
     with context:
-        summary = service.execute_dataset(dataset, config)
+        summary = service.execute_dataset(fresh_dataset, config)
 
     hybrid = summary.result["hybrid"]
     selected = hybrid.get("selected_candidate", {})

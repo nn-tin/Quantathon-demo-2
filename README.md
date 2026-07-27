@@ -15,6 +15,8 @@ LP relaxation + heuristic incumbent
 
 The full classical MILP comparison and scaling experiments are separated into the offline `benchmark/` suite.
 
+Every unique quantum benchmark configuration uses a two-stage timing protocol: the first full Hybrid run is discarded as initialization warm-up, and only the second and later runs are included in runtime statistics.
+
 ## Fixed quantum profile
 
 The demo and all benchmarks use the same solver settings:
@@ -35,11 +37,12 @@ The localhost demo uses 10 active qubits and Top-K 10. Benchmark Top-K increases
 backend/                     FastAPI Hybrid demo and shared solver core
 frontend/                    React/Vite operational demo
 benchmark/                   Offline research experiments and HTML report
-  data/                      SimBench adapter and synthetic mapping-like data
+  data/                      IEEE30 copper-plate factory and block mapping
   experiments/               Three separate benchmark experiments
   results/                   Raw CSV/JSON, summaries and figures
   report/benchmark_report.html
-Run_PiL_HQUC_GPU_Demo_and_Benchmarks.ipynb
+PiL-HQUC_Colab_GPU_Demo_API.ipynb
+PiL-HQUC_Colab_GPU_Backend_Tests_and_3_Benchmarks.ipynb
 ```
 
 The old top-level `evaluate/` and `compare_hybrid_milp.py` workflow has been removed. Benchmark code is not imported by FastAPI or the frontend.
@@ -70,6 +73,8 @@ npm run dev
 
 Open `http://localhost:5173`. Vite proxies `/api` to FastAPI. The backend rejects a run if CUDA-Q cannot use the NVIDIA target.
 
+The full HiGHS UC reference uses a 0.5% relative MIP-gap target and a 60-second limit per dataset.
+
 ## Run the three offline benchmarks
 
 ```bash
@@ -87,27 +92,27 @@ PYTHONPATH=backend:. \
 python benchmark/run_all.py --experiments all --quick
 ```
 
-### Benchmark 1 — SimBench method comparison
+### Benchmark 1 — IEEE30 method comparison
 
-- SimBench annual demand and renewable profiles;
-- five 24-hour windows;
-- aggregated into the prototype single-bus UC formulation;
-- full HiGHS MILP and Hybrid QAOA solve the same converted case;
-- Top-K scales with generator count.
+- eight 24-hour scenarios from one MATPOWER case30-derived ten-unit fleet;
+- full HiGHS UC and Hybrid q=10 solve the same scenario;
+- Top-K = 10.
 
-### Benchmark 2 — Qubit-budget scaling
+### Benchmark 2 — IEEE30 qubit-budget scaling
 
-- one fixed synthetic 10-generator, 24-hour instance;
+- one fixed IEEE30-derived 10-generator `double-peak` instance;
 - q = `8, 10, 14, 18, 20, 24, 26`;
-- mapping-like structured blocks defined in Python;
-- Top-K is fixed across all q values.
+- the same HiGHS full-UC reference at every q;
+- mapping-like structured active blocks defined in Python;
+- Top-K fixed at 10.
 
-### Benchmark 3 — Generator scaling
+### Benchmark 3 — IEEE30-derived generator scaling
 
-- generator count = `4, 6, 8, 10, 12, 16, 20`;
+- generator count = `10, 20, 30, 40, 50`;
 - q = `10` and q = `20`;
-- capacity-normalized synthetic datasets;
-- Top-K increases with generator count and is identical for both q curves at a given system size.
+- fleets are controlled replicas of the same IEEE30-derived ten-unit base;
+- demand, renewable and reserve profiles scale with installed capacity;
+- Top-K = generator count and is identical for both q curves.
 
 Outputs are written to:
 
@@ -120,10 +125,13 @@ benchmark/report/benchmark_report.html
 
 ## Colab
 
-Use `Run_PiL_HQUC_GPU_Demo_and_Benchmarks.ipynb`. It safely uploads/extracts the project, installs the exact dependencies, verifies the NVIDIA target, opens the GPU demo through a Colab proxy, runs the benchmark suite, and downloads the report bundle.
+The project contains exactly two purpose-specific notebooks:
+
+- `PiL-HQUC_Colab_GPU_Demo_API.ipynb`: starts only the FastAPI GPU backend and Cloudflare tunnel for the local frontend demo. It does not run tests or benchmarks.
+- `PiL-HQUC_Colab_GPU_Backend_Tests_and_3_Benchmarks.ipynb`: runs all backend and benchmark tests, then executes all three IEEE30 benchmarks and exports the complete report/results bundle. It does not start the frontend API or tunnel.
 
 ## Tests
 
 ```bash
-PYTHONPATH=backend pytest -q backend/tests
+PYTHONPATH=backend:. pytest -q backend/tests benchmark/tests
 ```

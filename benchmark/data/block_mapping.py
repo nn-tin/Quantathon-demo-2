@@ -31,13 +31,14 @@ QUBIT_SCALING_BLOCKS: dict[int, BlockShape] = {
 
 
 def benchmark_top_k(generator_count: int, *, shots: int = 256) -> int:
-    """Scale validation breadth with full-system size, capped for runtime."""
+    """Increase validated QAOA candidates with IEEE30-derived fleet size.
 
-    return min(
-        32,
-        shots,
-        max(10, math.ceil(1.5 * generator_count)),
-    )
+    For the supported scaling points this gives Top-K = 10, 20, 30, 40, 50.
+    It remains fixed at 10 throughout Benchmark 2 because that benchmark keeps
+    the IEEE30-derived ten-generator system unchanged.
+    """
+
+    return min(shots, max(10, int(generator_count)))
 
 
 def qubit_scaling_block(qubit_budget: int) -> BlockShape:

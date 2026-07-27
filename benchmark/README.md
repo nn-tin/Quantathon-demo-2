@@ -1,58 +1,59 @@
-# Offline Benchmark Suite
+# IEEE30 Offline Benchmark Suite
 
-The localhost application is a **Hybrid-only GPU demo**. Classical comparison and scaling evidence live here and are never called by FastAPI or the React frontend.
+This package is independent of the localhost Hybrid-only demo. All three experiments use one common data family: a 24-hour copper-plate Unit Commitment adaptation of MATPOWER `case30.m`.
 
-## Fixed quantum protocol
+## Data boundary
 
-All measured runs use the same settings:
-
-- Qamomile → CUDA-Q, target `nvidia`, CPU fallback disabled;
-- QAOA depth 1;
-- 256 final shots;
-- 64 fallback optimizer shots;
-- 6 COBYLA objective evaluations;
-- at most 2 ADMM-guided quantum rounds.
-
-Only dataset, seed, active-qubit budget, block shape and benchmark Top-K vary. Top-K is fixed across qubit scaling and grows with generator count in the other two experiments.
+- The original case has 30 buses and 6 generators.
+- This prototype aggregates the 30-bus load into one bus and does **not** solve branch power flows.
+- The six source generators are split into ten virtual UC units while preserving total capacity and source cost ordering.
+- UC-only parameters absent from `case30.m` (minimum output, ramps, no-load/startup costs and time constraints) are deterministic documented adaptations.
+- See `data/IEEE30-DATA-NOTES.md`.
 
 ## Experiments
 
-1. `simbench_method_comparison.py`
-   - SimBench annual demand/renewable profiles;
-   - aggregated into the prototype single-bus 24-hour UC model;
-   - full HiGHS MILP versus Hybrid QAOA on the same converted case.
+1. `ieee30_method_comparison.py`
+   - eight 24-hour IEEE30-derived profiles;
+   - same ten-unit fleet in every profile;
+   - Hybrid q=10 versus full HiGHS UC.
 
 2. `qubit_budget_scaling.py`
-   - one fixed synthetic 10-generator case;
+   - one fixed IEEE30-derived ten-generator `double-peak` instance;
    - q = 8, 10, 14, 18, 20, 24, 26;
-   - mapping-like structured blocks defined in Python;
-   - fixed Top-K for all q values.
+   - same HiGHS reference at every q;
+   - Top-K fixed at 10.
 
 3. `generator_scaling.py`
-   - synthetic, capacity-normalized systems with 4–20 generators;
+   - replicated IEEE30-derived fleets G = 10, 20, 30, 40, 50;
    - q = 10 and q = 20;
-   - Top-K grows with generator count and is identical for both q curves.
+   - one HiGHS reference per G;
+   - Top-K = G, identical between q=10 and q=20.
+
+The full HiGHS UC reference uses a 0.5% relative MIP-gap target and a 60-second limit per dataset.
+
+## Warm-run timing
+
+Every unique quantum configuration runs once as a full discarded warm-up. The second and later runs are measured. Fresh incumbent/ADMM/QAOA state is created for every run; only process-level CUDA/CUDA-Q caches persist. Warm-ups are exported separately and excluded from statistics, plots and runtime ratios.
 
 ## Run
 
 ```bash
 python -m pip install -r benchmark/requirements-benchmark.txt
-CUDAQ_TARGET=nvidia REQUIRE_CUDAQ=1 \
-PYTHONPATH=backend:. \
+CUDAQ_TARGET=nvidia REQUIRE_CUDAQ=1 PYTHONPATH=backend:. \
 python benchmark/run_all.py --experiments all
 ```
 
-A shorter protocol check keeps the same solver settings but uses fewer seeds/data points:
+Quick protocol check, with unchanged solver hyperparameters:
 
 ```bash
-CUDAQ_TARGET=nvidia REQUIRE_CUDAQ=1 \
-PYTHONPATH=backend:. \
+CUDAQ_TARGET=nvidia REQUIRE_CUDAQ=1 PYTHONPATH=backend:. \
 python benchmark/run_all.py --experiments all --quick
 ```
 
-Outputs:
+Individual selections:
 
-- raw CSV/JSON: `benchmark/results/raw/`;
-- summaries: `benchmark/results/summary/`;
-- figures: `benchmark/results/figures/`;
-- report: `benchmark/report/benchmark_report.html`.
+```bash
+python benchmark/run_all.py --experiments ieee30
+python benchmark/run_all.py --experiments qubits
+python benchmark/run_all.py --experiments generators
+```
