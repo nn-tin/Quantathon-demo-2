@@ -1,275 +1,14 @@
-# Quantum-Assisted Unit Commitment
+# Quantum-Assisted Unit Commitment ⚡
+
+A full-stack student research prototype for **Hybrid quantum–classical Unit Commitment**, developed by **WATTS UP** for **the 2nd SEA Quantathon (QC4SG 2026)**.
 
 <p align="center">
-  <strong>WATTS UP</strong><br>
-  Student research project developed for <strong>the 2nd SEA Quantathon (QC4SG 2026)</strong>
+  <strong>24-hour scheduling · ADMM-guided active-block QAOA · CUDA-Q GPU execution · Classical validation</strong>
 </p>
 
-<p align="center">
-  <code>Unit Commitment</code> · <code>Hybrid Quantum–Classical Optimization</code> ·
-  <code>QAOA</code> · <code>CUDA-Q</code> · <code>FastAPI</code> · <code>React</code>
-</p>
+## Team Members
 
-## Overview
-
-**Quantum-Assisted Unit Commitment** is a full-stack student research prototype that explores how a small quantum optimization subproblem can be integrated into a complete 24-hour power-system scheduling workflow.
-
-The project does **not** send the full Unit Commitment problem to a quantum solver. Instead, the classical pipeline builds an initial schedule, identifies a limited set of high-impact commitment variables, and sends only that active block to QAOA. The resulting quantum candidates are reconstructed into complete schedules and checked using classical Economic Dispatch and feasibility validation.
-
-The goal is to investigate a practical hybrid architecture under limited qubit budgets—not to claim quantum advantage over modern classical solvers.
-
-## Project Highlights
-
-| Area | Current implementation |
-|---|---|
-| Operational problem | 24-hour Unit Commitment and Economic Dispatch |
-| Quantum role | Optimize a selected active block of binary commitment variables |
-| Classical reference | Full UC solved with HiGHS |
-| Quantum stack | Qamomile → CUDA-Q → NVIDIA GPU |
-| Active-qubit range tested | 8–26 qubits |
-| Generator scaling tested | 10–50 generators |
-| Benchmark data family | MATPOWER case30-derived copper-plate UC adaptation |
-| Measured Hybrid runs | 75 |
-| Discarded initialization runs | 25 |
-| Reported aggregate mean cost gap | 1.714% |
-| Reported aggregate Hybrid feasibility rate | 52.0% |
-
-> **Research interpretation:** The experiments show that a small active-block QAOA stage can be connected to a full scheduling and validation pipeline. They do not demonstrate quantum advantage, and strict feasibility remains the primary limitation of the current prototype.
-
-## Hybrid Workflow
-
-```mermaid
-flowchart TD
-    A[24-hour demand, renewable and reserve inputs]
-    B[LP relaxation and heuristic commitment]
-    C[Relaxed Economic Dispatch]
-    D[Residual and dual-signal calculation]
-    E[ADMM-guided active-block selection]
-    F[Dynamic QUBO construction]
-    G[Qamomile QUBO-to-Ising conversion]
-    H[QAOA with CUDA-Q on NVIDIA GPU]
-    I[Top-K measured bitstrings]
-    J[Reconstruct complete 24-hour schedules]
-    K[Exact Economic Dispatch and feasibility validation]
-    L[Best validated operating plan]
-
-    A --> B --> C --> D --> E --> F --> G --> H --> I --> J --> K --> L
-    K -->|ADMM feedback, up to two rounds| D
-```
-
-The quantum computer is therefore used as a **candidate generator for a carefully selected subproblem**, while classical optimization remains responsible for the complete system model, dispatch reconstruction and operational validation.
-
-## Repository Structure
-
-```text
-.
-├── frontend/      React/Vite interactive operational demo
-├── backend/       FastAPI API and Hybrid optimization pipeline
-├── benchmark/     IEEE30-derived experiments, results and report
-├── PiL-HQUC_Colab_GPU_Demo_API.ipynb
-├── PiL-HQUC_Colab_GPU_Backend_Tests_and_3_Benchmarks.ipynb
-└── README.md
-```
-
-Detailed documentation:
-
-- [Frontend documentation](frontend/README.md)
-- [Backend documentation](backend/README.md)
-- [Benchmark documentation](benchmark/README.md)
-- [Generated benchmark report](benchmark/report/benchmark_report.html)
-
-## Interactive Demo
-
-The frontend presents the pipeline as an operational decision-support interface:
-
-1. Select or adjust a 24-hour operating scenario.
-2. Review demand, renewable and system inputs.
-3. Run the Hybrid scheduling pipeline.
-4. Inspect the recommended generator commitment and power-supply schedule.
-5. Review operating cost, feasibility, renewable use and the execution log.
-
-The operational application displays the **Hybrid method only**. Classical HiGHS results are kept in the offline benchmark suite so that the live demo remains focused on the recommended schedule rather than a model-comparison dashboard.
-
-## Experimental Protocol
-
-All reported experiments use the fixed GPU quantum protocol below:
-
-| Parameter | Setting |
-|---|---|
-| CUDA-Q target | `nvidia` |
-| QAOA depth | `1` |
-| Final shots | `256` |
-| Optimizer fallback shots | `64` |
-| COBYLA objective evaluations | `6` |
-| Maximum ADMM-guided rounds | `2` |
-| HiGHS relative MIP-gap target | `0.5%` |
-| HiGHS time limit | `60 seconds` per dataset |
-| Timing protocol | First complete run of every unique quantum configuration is discarded |
-| Measured timing | Second and later runs only |
-
-The discarded run initializes CUDA, CUDA-Q/Qamomile and circuit-size-specific resources. Optimizer evaluations, sampling, reconstruction and candidate validation remain inside every measured Hybrid runtime.
-
-## Benchmark Results
-
-### 1. IEEE30-derived scenario comparison
-
-Eight 24-hour demand and renewable profiles reuse the same ten-generator case30-derived fleet. HiGHS and Hybrid solve the same operating case.
-
-![Hybrid cost gap across scenarios](docs/assets/scenario_cost_gap.png)
-
-![Measured runtime by scenario](docs/assets/scenario_runtime_comparison.png)
-
-| Scenario | HiGHS cost | Hybrid mean cost | Mean gap | HiGHS runtime | Hybrid runtime | Strictly feasible |
-|---|---:|---:|---:|---:|---:|:---:|
-| `base-day` | 15,451.45 | 15,809.93 | 2.32% | 2.08 s | 1.17 s | Yes |
-| `cloudy-solar` | 16,894.80 | 17,442.32 | 3.24% | 2.56 s | 1.15 s | Yes |
-| `double-peak` | 15,923.96 | 16,204.01 | 1.76% | 4.12 s | 2.22 s | No |
-| `evening-ramp` | 16,079.65 | 16,322.50 | 1.51% | 1.63 s | 2.14 s | No |
-| `high-demand` | 20,484.82 | 20,902.71 | 2.04% | 2.50 s | 1.14 s | Yes |
-| `renewable-drop` | 16,174.95 | 16,498.34 | 2.00% | 2.15 s | 2.59 s | No |
-| `summer-solar` | 15,129.46 | 15,440.26 | 2.05% | 2.14 s | 1.08 s | Yes |
-| `windy-night` | 14,121.88 | 14,568.85 | 3.17% | 1.93 s | 1.28 s | Yes |
-
-Across the eight scenarios, the reported mean cost gap ranges from **1.51% to 3.24%**. Five scenarios passed strict Hybrid feasibility validation in the reported runs, while `double-peak`, `evening-ramp` and `renewable-drop` did not.
-
-Runtime should be interpreted carefully: the measured Hybrid pipeline was faster than the HiGHS reference on several cases, but the methods do not provide equivalent guarantees, and some faster Hybrid cases were not strictly feasible.
-
-### 2. Active-qubit budget scaling
-
-The fixed ten-generator `double-peak` instance was evaluated at:
-
-```text
-q = 8, 10, 14, 18, 20, 24, 26
-```
-
-Top-K remained fixed at 10, making the active-qubit budget the controlled variable.
-
-![Runtime growth with active-qubit budget](docs/assets/qubit_runtime_scaling.png)
-
-| Active qubits | Mean cost gap | Hybrid runtime | QAOA runtime |
-|---:|---:|---:|---:|
-| 8 | 1.76% | 2.18 s | 1.56 s |
-| 10 | 1.76% | 2.13 s | 1.56 s |
-| 14 | 1.76% | 3.05 s | 2.51 s |
-| 18 | 1.76% | 3.85 s | 3.28 s |
-| 20 | 2.65% | 3.71 s | 3.15 s |
-| 24 | 1.76% | 6.51 s | 5.92 s |
-| 26 | 1.76% | 9.70 s | 9.09 s |
-
-The cost result remained near **1.76%** for most qubit budgets, while measured Hybrid runtime increased from approximately **2.18 seconds at q=8** to **9.70 seconds at q=26**. This supports the project's motivation for limiting the quantum search to a selected active block.
-
-However, strict feasibility was not achieved for the reported qubit-scaling runs. These values should therefore be read as evidence about candidate cost and runtime behavior, not as deployable operating schedules.
-
-### 3. Generator scaling
-
-The base fleet was replicated to:
-
-```text
-10, 20, 30, 40 and 50 generators
-```
-
-Hybrid was evaluated at two fixed active budgets, `q=10` and `q=20`. Top-K increased with the generator count.
-
-![Cost-quality scaling with fixed active-qubit budgets](docs/assets/generator_cost_gap_scaling.png)
-
-| Generators | Mean gap at q=10 | Mean gap at q=20 | Feasible q=10 / q=20 |
-|---:|---:|---:|:---:|
-| 10 | 1.76% | 1.76% | No / No |
-| 20 | 1.38% | 1.48% | Yes / Yes |
-| 30 | 0.95% | 0.94% | Yes / Yes |
-| 40 | 0.73% | 0.74% | Yes / Yes |
-| 50 | 0.87% | 0.93% | Yes / Yes |
-
-For fleets from 20 to 50 generators, both tested active-qubit budgets passed the report's strict feasibility indicator. The reported cost gaps remained below **1.5%** for those fleet sizes, showing how the full classical problem can grow while the quantum subproblem remains limited to 10 or 20 variables.
-
-This is a controlled copper-plate scaling experiment, not a claim that the project solves a network-constrained 50-generator transmission UC model.
-
-## What the Results Support
-
-The current evidence supports four conclusions:
-
-1. **End-to-end integration is possible.** QAOA-generated bitstrings can be reconstructed and evaluated inside a complete UC/ED workflow.
-2. **A small active block can represent a larger scheduling problem.** Generator scaling does not require assigning a qubit to every commitment variable.
-3. **Cost quality can remain close to a strong classical reference.** Reported mean gaps are generally in the low single-digit percentage range.
-4. **Feasibility is not yet consistent.** The aggregate Hybrid feasibility rate is 52%, and this remains the main area for improvement.
-
-## Current Limitations
-
-- The experiments use a **MATPOWER case30-derived copper-plate adaptation**. They do not model transmission lines, voltage constraints or network congestion.
-- CUDA-Q runs on an NVIDIA GPU simulator rather than physical quantum hardware.
-- QAOA depth and optimizer evaluations are deliberately small for a practical student demonstration.
-- A low operating-cost candidate is not sufficient unless it also passes strict reconstruction and feasibility checks.
-- The results do not establish quantum speedup or quantum advantage over HiGHS.
-- Benchmark conclusions are limited to the supplied scenarios, configurations and timing protocol.
-
-## Run the Project
-
-### Frontend
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-The development server is available at `http://localhost:5173`.
-
-### GPU Backend
-
-Install the CUDA-Q environment and backend dependencies, then run:
-
-```bash
-python -m pip install -r backend/requirements-quantum-colab.txt
-
-CUDAQ_TARGET=nvidia REQUIRE_CUDAQ=1 \
-PYTHONPATH=backend \
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-### Tests
-
-```bash
-PYTHONPATH=backend:. pytest -q backend/tests benchmark/tests
-```
-
-### Offline Benchmarks
-
-```bash
-python -m pip install -r benchmark/requirements-benchmark.txt
-
-CUDAQ_TARGET=nvidia REQUIRE_CUDAQ=1 \
-PYTHONPATH=backend:. \
-python benchmark/run_all.py --experiments all
-```
-
-The repository also includes two Colab notebooks:
-
-- `PiL-HQUC_Colab_GPU_Demo_API.ipynb` — starts the GPU backend for the interactive frontend.
-- `PiL-HQUC_Colab_GPU_Backend_Tests_and_3_Benchmarks.ipynb` — runs tests, executes all three benchmark groups and exports the result bundle.
-
-## Cloud Deployment
-
-The complete React frontend and CUDA-Q GPU backend can be deployed on one Amazon EC2 GPU instance. The repository includes a Docker-based deployment, host installation scripts, GPU verification and cost-control instructions.
-
-See [AWS deployment guide](AWS-DEPLOY.md).
-
-## Technology Stack
-
-| Layer | Technologies |
-|---|---|
-| Frontend | React, Vite, CSS |
-| API | FastAPI, Pydantic, Uvicorn |
-| Classical optimization | HiGHS, linear Economic Dispatch |
-| Hybrid optimization | ADMM-guided active-block selection, QUBO, QAOA |
-| Quantum software | Qamomile, NVIDIA CUDA-Q |
-| Benchmarking | Python, pandas, Matplotlib, JSON/CSV/HTML reports |
-| GPU environment | NVIDIA T4 on AWS EC2 / Google Colab |
-
-## Team
-
-**WATTS UP**
-
-| Team member |
+| Member |
 |---|
 | Lê Anh Dũng |
 | Nguyễn Hồng Phúc |
@@ -277,11 +16,443 @@ See [AWS deployment guide](AWS-DEPLOY.md).
 | Lê Thành Vinh |
 | Jee Yanne Alecer |
 
-Developed for **the 2nd SEA Quantathon (QC4SG 2026)**.
+**Team:** WATTS UP  
+**Competition:** the 2nd SEA Quantathon / QC4SG 2026
 
-## Responsible Claim
+## Overview
 
-This repository presents an educational and experimental Hybrid quantum–classical prototype. Its contribution is the design and implementation of a complete workflow—from operating inputs and active-set selection to GPU QAOA, schedule reconstruction, validation and reproducible benchmarking.
+**Quantum-Assisted Unit Commitment** explores how a small quantum optimization subproblem can be integrated into a complete 24-hour power-system scheduling workflow.
 
-It should be evaluated as a student research and engineering project, not as evidence that current quantum optimization outperforms mature classical Unit Commitment solvers.
+The project does not encode the full Unit Commitment problem directly onto a quantum device. Instead, it:
 
+1. builds an initial full commitment schedule using classical methods;
+2. solves relaxed Economic Dispatch;
+3. computes residual and dual-pressure signals;
+4. selects a limited set of high-impact binary decisions;
+5. formulates that active block as a QUBO;
+6. maps the QUBO to an Ising Hamiltonian;
+7. executes QAOA with CUDA-Q on an NVIDIA GPU;
+8. reconstructs complete 24-hour schedules;
+9. validates candidates using classical dispatch and feasibility checks.
+
+The project is intended as a transparent student research and engineering prototype. It does **not** claim quantum advantage over mature classical solvers.
+
+## Features
+
+- ⚡ **24-hour Unit Commitment workflow** with demand, renewable generation and reserve requirements
+- 🧠 **ADMM-guided active-block selection** to restrict the quantum search to high-impact commitment variables
+- ⚛️ **QUBO-to-Ising-to-QAOA pipeline** using Qamomile and NVIDIA CUDA-Q
+- 🎮 **NVIDIA GPU execution** through the CUDA-Q `nvidia` target
+- ✅ **Classical schedule reconstruction and validation** before accepting a quantum candidate
+- 📊 **React operational dashboard** for inputs, run progress and recommended schedules
+- 🧪 **Three offline benchmark groups** with HiGHS as the classical reference
+- 📈 **Generated JSON, CSV, PNG and HTML outputs**
+- ☁️ **AWS EC2 GPU deployment configuration**
+- 🧩 **Responsive interface** for mobile, tablet, laptop and desktop layouts
+
+## Technology Stack
+
+| Layer | Technologies |
+|---|---|
+| Frontend | React, Vite, JavaScript, CSS |
+| Backend API | FastAPI, Pydantic, Uvicorn |
+| Classical optimization | HiGHS, LP relaxation, Economic Dispatch |
+| Hybrid optimization | ADMM-guided active-block selection, QUBO, Ising mapping, QAOA |
+| Quantum software | Qamomile, NVIDIA CUDA-Q, CUDA-Q Solvers |
+| GPU execution | NVIDIA CUDA target |
+| Benchmarking | Python, pandas, NumPy, Matplotlib, JSON, CSV, HTML |
+| Testing | pytest, FastAPI TestClient |
+| Cloud deployment | AWS EC2 GPU, Docker, Docker Compose |
+| Research data | MATPOWER case30-derived copper-plate Unit Commitment adaptation |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    U[React Frontend]
+    A[FastAPI API]
+    P[Hybrid Pipeline]
+    C[Classical Preprocessing]
+    Q[QUBO and Ising Model]
+    G[CUDA-Q QAOA on NVIDIA GPU]
+    V[Reconstruction and Validation]
+    R[Recommended 24-hour Plan]
+
+    U --> A
+    A --> P
+    P --> C
+    C --> Q
+    Q --> G
+    G --> V
+    V --> R
+    R --> A
+    A --> U
+```
+
+### Core Components
+
+1. **Frontend**
+   - Collects operating inputs
+   - Displays scenario checks and execution progress
+   - Presents the final Hybrid schedule and cost analysis
+   - Exports result data
+
+2. **Backend**
+   - Validates API requests
+   - Builds the initial commitment schedule
+   - Runs relaxed Economic Dispatch
+   - Selects the active quantum block
+   - Executes QAOA
+   - Reconstructs and validates full schedules
+
+3. **Benchmark Suite**
+   - Compares Hybrid cost and runtime against HiGHS
+   - Studies active-qubit scaling
+   - Studies generator scaling
+   - Produces reproducible result bundles and an HTML report
+
+## Hybrid Workflow
+
+```text
+24-hour operating inputs
+        ↓
+LP relaxation and heuristic commitment
+        ↓
+Relaxed Economic Dispatch
+        ↓
+Residual and dual-signal calculation
+        ↓
+ADMM-guided active-block selection
+        ↓
+Dynamic QUBO construction
+        ↓
+QUBO-to-Ising conversion
+        ↓
+QAOA with CUDA-Q on NVIDIA GPU
+        ↓
+Top-K measured bitstrings
+        ↓
+Full schedule reconstruction
+        ↓
+Exact Economic Dispatch and feasibility validation
+        ↓
+Best validated operating plan
+```
+
+## Experimental Evidence
+
+The included benchmark report contains:
+
+| Metric | Reported value |
+|---|---:|
+| Measured Hybrid runs | 75 |
+| Discarded first runs | 25 |
+| Aggregate Hybrid feasibility rate | 52.0% |
+| Aggregate mean cost gap | 1.714% |
+| Validated active-qubit range | 8–26 |
+| Generator scaling range | 10–50 |
+
+### Benchmark 1 — IEEE30 Scenario Comparison
+
+Eight 24-hour scenarios reuse the same ten-generator case30-derived fleet.
+
+![Scenario cost gap](docs/assets/scenario_cost_gap.png)
+
+### Benchmark 2 — Active-Qubit Scaling
+
+The fixed ten-generator `double-peak` case is evaluated at:
+
+```text
+q = 8, 10, 14, 18, 20, 24, 26
+```
+
+![Qubit runtime scaling](docs/assets/qubit_runtime_scaling.png)
+
+### Benchmark 3 — Generator Scaling
+
+The fleet is scaled to:
+
+```text
+10, 20, 30, 40 and 50 generators
+```
+
+at fixed active budgets `q=10` and `q=20`.
+
+![Generator cost-gap scaling](docs/assets/generator_cost_gap_scaling.png)
+
+> The results show that the Hybrid pipeline can generate candidates with low single-digit cost gaps in the tested configurations. Strict feasibility is not consistent across every experiment and remains the main limitation of the current prototype.
+
+Detailed results are available in:
+
+- [`benchmark/README.md`](benchmark/README.md)
+- [`benchmark/report/benchmark_report.html`](benchmark/report/benchmark_report.html)
+
+## Prerequisites
+
+### Local frontend development
+
+- Node.js 20 or newer
+- npm
+
+### Backend tests and classical components
+
+- Python 3.12
+- pip
+- HiGHS Python dependencies from the provided requirements files
+
+### Real Hybrid GPU execution
+
+- Linux x86_64
+- NVIDIA GPU
+- NVIDIA driver and CUDA-compatible runtime
+- CUDA-Q target `nvidia`
+- Qamomile and CUDA-Q Solvers
+
+### AWS deployment
+
+- AWS account
+- EC2 GPU quota
+- `g4dn.xlarge` or another supported NVIDIA GPU instance
+- Docker Engine
+- NVIDIA Container Toolkit
+
+## Quick Start
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd Quantum-Assisted-Unit-Commitment
+```
+
+### 2. Run the Frontend
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+### 3. Run the GPU Backend
+
+```bash
+cd ..
+python -m pip install -r backend/requirements-quantum-colab.txt
+
+CUDAQ_TARGET=nvidia \
+REQUIRE_CUDAQ=1 \
+PYTHONPATH=backend \
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+API endpoints:
+
+```text
+http://localhost:8000/api/health
+http://localhost:8000/api/docs
+```
+
+### 4. Run Tests
+
+```bash
+python -m pip install \
+  -r backend/requirements.txt \
+  -r benchmark/requirements-benchmark.txt
+
+PYTHONPATH=backend:. \
+python -m pytest -q backend/tests benchmark/tests
+```
+
+Expected result for the current test suite:
+
+```text
+15 passed
+```
+
+## AWS GPU Deployment
+
+The repository contains a complete single-instance AWS deployment:
+
+```text
+deploy/aws-ec2/
+├── Dockerfile
+├── compose.yaml
+├── .env.example
+├── README.md
+└── scripts/
+```
+
+Deployment model:
+
+```text
+Browser
+   ↓ HTTP
+AWS EC2 GPU
+   ↓
+Docker container
+   ├── React frontend
+   ├── FastAPI backend
+   └── CUDA-Q NVIDIA execution
+```
+
+See:
+
+- [`AWS-DEPLOY.md`](AWS-DEPLOY.md)
+- [`deploy/aws-ec2/README.md`](deploy/aws-ec2/README.md)
+
+## Project Structure
+
+```text
+Quantum-Assisted-Unit-Commitment/
+├── frontend/
+│   ├── src/
+│   ├── README.md
+│   └── package.json
+├── backend/
+│   ├── app/
+│   ├── tests/
+│   ├── README.md
+│   └── requirements-quantum-colab.txt
+├── benchmark/
+│   ├── data/
+│   ├── experiments/
+│   ├── report/
+│   ├── results/
+│   └── README.md
+├── deploy/
+│   └── aws-ec2/
+├── docs/
+│   ├── assets/
+│   └── project-notes/
+├── PiL-HQUC_Colab_GPU_Demo_API.ipynb
+├── PiL-HQUC_Colab_GPU_Backend_Tests_and_3_Benchmarks.ipynb
+├── AWS-DEPLOY.md
+└── README.md
+```
+
+## Usage
+
+### Interactive Demo
+
+1. Select an operating scenario.
+2. Review demand, renewable generation, grid and storage inputs.
+3. Start the Hybrid optimization run.
+4. Follow the execution log.
+5. Inspect the final 24-hour schedule.
+6. Review cost, dispatch and operating metrics.
+
+### Offline Benchmarking
+
+```bash
+CUDAQ_TARGET=nvidia \
+REQUIRE_CUDAQ=1 \
+PYTHONPATH=backend:. \
+python benchmark/run_all.py --experiments all
+```
+
+### Colab Workflows
+
+- `PiL-HQUC_Colab_GPU_Demo_API.ipynb` starts the GPU backend for the interactive demo.
+- `PiL-HQUC_Colab_GPU_Backend_Tests_and_3_Benchmarks.ipynb` runs tests and all benchmark groups.
+
+## Testing
+
+The test suite covers:
+
+- API contract and health responses
+- Active-block selection
+- QUBO and Ising consistency
+- Candidate reconstruction
+- ADMM updates
+- Classical HiGHS reference solving
+- Benchmark configuration and output protocol
+
+Run all tests:
+
+```bash
+PYTHONPATH=backend:. \
+python -m pytest -q backend/tests benchmark/tests
+```
+
+## Configuration
+
+The fixed quantum demo profile uses:
+
+| Parameter | Value |
+|---|---:|
+| QAOA depth | 1 |
+| Final shots | 256 |
+| Optimizer fallback shots | 64 |
+| COBYLA evaluations | 6 |
+| Maximum ADMM-guided rounds | 2 |
+| CUDA-Q target | `nvidia` |
+| CPU fallback | Disabled in GPU deployment |
+
+## Troubleshooting
+
+### Frontend cannot reach the API
+
+Confirm that:
+
+```text
+http://localhost:8000/api/health
+```
+
+is available and that `VITE_API_BASE_URL` is configured correctly when frontend and backend use different domains.
+
+### CUDA-Q reports CPU or unavailable
+
+Check:
+
+```bash
+nvidia-smi
+echo "$CUDAQ_TARGET"
+```
+
+The production GPU configuration should use:
+
+```bash
+export CUDAQ_TARGET=nvidia
+export REQUIRE_CUDAQ=1
+```
+
+### AWS instance cannot launch
+
+Request an increase for:
+
+```text
+Running On-Demand G and VT instances
+```
+
+in the same AWS Region.
+
+### Docker cannot access the GPU
+
+Verify:
+
+```bash
+sudo docker run --rm --gpus all \
+  nvcr.io/nvidia/cuda:12.4.1-base-ubuntu22.04 \
+  nvidia-smi
+```
+
+## Current Limitations
+
+- The current model is a **copper-plate Unit Commitment adaptation**, not network-constrained UC.
+- CUDA-Q uses an NVIDIA GPU simulator rather than physical quantum hardware.
+- The prototype does not demonstrate quantum advantage.
+- Strict Hybrid feasibility is not achieved in every benchmark configuration.
+- The frontend is a decision-support demonstration, not a certified grid-control system.
+- AWS GPU deployment incurs compute and storage costs.
+
+## Responsible Research Claim
+
+This project demonstrates the engineering integration of active-set selection, QUBO construction, GPU QAOA, full schedule reconstruction and classical feasibility validation.
+
+Its contribution is the complete and measurable Hybrid workflow—not a claim that present-day quantum optimization outperforms HiGHS.
