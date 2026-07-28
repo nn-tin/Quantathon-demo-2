@@ -43110,3 +43110,228 @@ video {
   }
 }
 /* #endregion */
+/* ============================================================
+   final cloud responsive safety contract
+   ============================================================ */
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0 !important;
+  max-width: 100%;
+}
+
+html,
+body,
+#root {
+  overflow-x: hidden !important;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.app,
+.appMain,
+.appContent,
+.home,
+.workspaceViewport,
+.workspaceLayoutContainer,
+.workspaceLeftMain,
+.workspaceRightColumn,
+.resultsViewport,
+.operatorScheduleSection,
+.scheduleColumn,
+.actionLogPanel {
+  width: 100%;
+  min-width: 0 !important;
+  max-width: 100%;
+}
+
+.app :where(h1, h2, h3, h4, p, label, small, strong, button) {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.app :where(img, svg, canvas, video) {
+  max-width: 100%;
+}
+
+.mainOperatorDispatchPanel,
+.unitActionsScheduleView,
+.commitmentTimeline,
+.dispatchPlot,
+.operationalStressPanel,
+.operationalStressChart,
+.svgChartWrap {
+  max-width: 100%;
+}
+
+@media (max-width: 1099px), (max-height: 719px) {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 100%;
+  }
+
+  #root {
+    min-height: 100dvh;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app,
+  .appMain,
+  .appContent,
+  .workspaceViewport,
+  .resultsViewport,
+  .operatorDecisionBoard.plainOperatorBoard.resultsViewport,
+  .workspaceLayoutContainer.launchpadLayout,
+  .workspaceLeftMain.launchpadMain,
+  .workspaceRightColumn.controlValidationTower,
+  .workspaceRightColumn.solverColumn.controlValidationTower,
+  .controlRailScroll,
+  .railOperatingInputs,
+  .unifiedValidationGate,
+  .operatorScheduleSection,
+  .plainOperatorBoard .operatorScheduleSection.splitScheduleLayout,
+  .plainOperatorBoard .scheduleColumn,
+  .plainOperatorBoard .actionLogPanel {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .app,
+  .appMain,
+  .appContent,
+  .workspaceViewport,
+  .resultsViewport,
+  .workspaceLayoutContainer.launchpadLayout {
+    overflow: visible !important;
+  }
+}
+
+@media (max-width: 1099px) {
+  .workspaceLayoutContainer.launchpadLayout {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    gap: 12px !important;
+  }
+
+  .workspaceLeftMain.launchpadMain,
+  .workspaceRightColumn.controlValidationTower,
+  .workspaceRightColumn.solverColumn.controlValidationTower {
+    grid-column: 1 !important;
+  }
+
+  .plainOperatorBoard .operatorScheduleSection.splitScheduleLayout,
+  .plainOperatorBoard .operatorScheduleSection.splitScheduleLayout.dispatch,
+  .plainOperatorBoard .operatorScheduleSection.splitScheduleLayout.actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas: "schedule" "log" !important;
+    grid-template-rows: auto auto !important;
+    overflow: visible !important;
+  }
+
+  .plainOperatorBoard .scheduleColumn { grid-area: schedule !important; }
+  .plainOperatorBoard .actionLogPanel { grid-area: log !important; }
+
+  .operatorResultsHeader,
+  .operatorResultsHeader.compactOperatorHeader,
+  .operatorSectionHead,
+  .operatorScheduleHead,
+  .operatorHeaderActions,
+  .operatorScheduleTools {
+    flex-wrap: wrap !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .appMain {
+    padding: max(8px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(10px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left)) !important;
+  }
+
+  .homeOutcomeLanding,
+  .outcomeHeroCard,
+  .outcomeEvidencePanel,
+  .problemCard,
+  .heroCard,
+  .workspaceTop,
+  .workspaceTop.launchpadIntro,
+  .scenarioLaunchpadHead,
+  .compactScenarioStrip,
+  .compactHead {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .heroActions,
+  .outcomeHeroActions,
+  .operatorHeaderActions,
+  .resultActions,
+  .homeFlow,
+  .outcomeEvidenceGrid,
+  .primaryScenarioGrid,
+  .railControlList,
+  .compactResultBar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .heroActions > button,
+  .outcomeHeroActions > button,
+  .operatorHeaderActions > button,
+  .resultActions > button,
+  .bigCta,
+  .secondaryCta,
+  .schedulePdfExportButton {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 44px;
+    white-space: normal !important;
+  }
+
+  .workspaceLaunchpad .controlValidationTower .railControlList {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: none !important;
+    grid-auto-rows: minmax(58px, auto) !important;
+  }
+
+  .compactResultPrimary,
+  .compactResultMetric {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 72px !important;
+    max-height: none !important;
+  }
+
+  .scheduleViewSwitch {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .methodModal,
+  .operatorDetailModal,
+  .weatherProfileDrawer,
+  .compactWeatherProfilePopover,
+  .portalUnitPopover {
+    max-width: calc(100dvw - 16px) !important;
+    max-height: calc(100dvh - 16px) !important;
+  }
+}

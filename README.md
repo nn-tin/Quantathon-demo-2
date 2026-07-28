@@ -247,6 +247,12 @@ The repository also includes two Colab notebooks:
 - `PiL-HQUC_Colab_GPU_Demo_API.ipynb` — starts the GPU backend for the interactive frontend.
 - `PiL-HQUC_Colab_GPU_Backend_Tests_and_3_Benchmarks.ipynb` — runs tests, executes all three benchmark groups and exports the result bundle.
 
+## Cloud Deployment
+
+The complete React frontend and CUDA-Q GPU backend can be deployed on one Amazon EC2 GPU instance. The repository includes a Docker-based deployment, host installation scripts, GPU verification and cost-control instructions.
+
+See [AWS deployment guide](AWS-DEPLOY.md).
+
 ## Technology Stack
 
 | Layer | Technologies |
@@ -257,7 +263,7 @@ The repository also includes two Colab notebooks:
 | Hybrid optimization | ADMM-guided active-block selection, QUBO, QAOA |
 | Quantum software | Qamomile, NVIDIA CUDA-Q |
 | Benchmarking | Python, pandas, Matplotlib, JSON/CSV/HTML reports |
-| GPU environment | NVIDIA CUDA-capable runtime / Google Colab |
+| GPU environment | NVIDIA T4 on AWS EC2 / Google Colab |
 
 ## Team
 
@@ -278,3 +284,4 @@ Developed for **the 2nd SEA Quantathon (QC4SG 2026)**.
 This repository presents an educational and experimental Hybrid quantum–classical prototype. Its contribution is the design and implementation of a complete workflow—from operating inputs and active-set selection to GPU QAOA, schedule reconstruction, validation and reproducible benchmarking.
 
 It should be evaluated as a student research and engineering project, not as evidence that current quantum optimization outperforms mature classical Unit Commitment solvers.
+
