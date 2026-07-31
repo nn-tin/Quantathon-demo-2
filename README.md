@@ -451,6 +451,24 @@ sudo docker run --rm --gpus all \
 - The frontend is a decision-support demonstration, not a certified grid-control system.
 - AWS GPU deployment incurs compute and storage costs.
 
+
+
+## License
+
+This project is **proprietary research software** and is **not open source**.
+
+The repository is published only for review, academic evaluation and
+competition judging. Any use, execution, copying, modification,
+redistribution, deployment, incorporation into another project or
+commercial exploitation requires prior written authorization.
+
+**No individual team member may grant permission independently. An
+authorization is valid only after written approval from at least 3 of the
+5 named copyright holders. Approval from one or two members is
+insufficient.**
+
+See [`LICENSE`](LICENSE) for the complete terms.
+
 ## Responsible Research Claim
 
 This project demonstrates the engineering integration of active-set selection, QUBO construction, GPU QAOA, full schedule reconstruction and classical feasibility validation.

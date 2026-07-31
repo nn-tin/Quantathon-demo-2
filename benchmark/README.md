@@ -631,3 +631,16 @@ This is intentional. Official measured Hybrid evidence requires CUDA-Q on the NV
 - The supplied report records an aggregate Hybrid feasibility rate of 52%.
 - Generator scaling uses controlled replicated fleets to study algorithm behavior; it does not represent five independent real power systems.
 - The benchmark evaluates a research prototype and should not be interpreted as proof of present-day quantum speedup or quantum advantage.
+
+
+## License
+
+This component is covered by the repository-level proprietary license.
+
+Viewing is permitted for evaluation, but use, execution, copying,
+modification, redistribution, deployment or incorporation into another
+project requires prior written authorization. No individual member may
+grant permission independently; authorization requires written approval
+from at least **3 of the 5 named copyright holders**.
+
+See [`../LICENSE`](../LICENSE).

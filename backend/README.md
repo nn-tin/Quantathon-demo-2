@@ -337,3 +337,16 @@ The AWS API returns HTTP 429 while another run is active. Wait and retry after t
 - QAOA execution uses a GPU simulator.
 - Strict feasibility is not achieved by every candidate or benchmark configuration.
 - The backend is a research prototype, not a production grid-control service.
+
+
+## License
+
+This component is covered by the repository-level proprietary license.
+
+Viewing is permitted for evaluation, but use, execution, copying,
+modification, redistribution, deployment or incorporation into another
+project requires prior written authorization. No individual member may
+grant permission independently; authorization requires written approval
+from at least **3 of the 5 named copyright holders**.
+
+See [`../LICENSE`](../LICENSE).

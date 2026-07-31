@@ -313,3 +313,16 @@ Confirm that the browser is not using an extreme zoom level. On narrow screens, 
 - The application is optimized for project demonstration rather than multi-user production traffic.
 - Run history is not permanently stored after the backend restarts.
 - The frontend assumes the API follows the schemas supplied by this repository.
+
+
+## License
+
+This component is covered by the repository-level proprietary license.
+
+Viewing is permitted for evaluation, but use, execution, copying,
+modification, redistribution, deployment or incorporation into another
+project requires prior written authorization. No individual member may
+grant permission independently; authorization requires written approval
+from at least **3 of the 5 named copyright holders**.
+
+See [`../LICENSE`](../LICENSE).
